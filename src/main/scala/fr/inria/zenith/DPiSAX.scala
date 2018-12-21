@@ -1,11 +1,14 @@
 package fr.inria.zenith
 
+import java.io.PrintWriter
+
 import com.typesafe.config.ConfigFactory
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{HashPartitioner, SparkConf, SparkContext}
 import play.api.libs.json._
 
 import scala.collection.mutable
+import scala.io.Source
 import scala.math.sqrt
 
 /**
@@ -21,7 +24,6 @@ object DPiSAX  {
 
 
   private def tsToSAX(ts: RDD[(Int, Array[Float])]): RDD[(Array[Int],Int)] = {
-    //TODO file -> data
     // normalization
     val tsWithStats = ts.map(t => (t._1, t._2, t._2.sum / t._2.length, t._2.map(x => x * x).sum / t._2.length)).map(t => (t._1, t._2, t._3, sqrt(t._4 - t._3 * t._3).toFloat))
     val tsNorm = tsWithStats.map(t => (t._1, t._2.map(x => (x - t._3) / t._4)))
@@ -78,7 +80,7 @@ object DPiSAX  {
 
     /** Partitioning TAble **/
     val partTable = partTreeRoot.partTable
-    val partTreeJsonString = partTreeRoot.toJSON
+    val partTreeJsonString = partTreeRoot.toJSON //TODO save to file
     println (partTreeJsonString)
     //partTable.foreach(println)
     partTable.map(v => (v._1, v._2.mkString("{",",","}"), v._3)).foreach(println)
@@ -102,22 +104,25 @@ object DPiSAX  {
       part.foreach{case (partID, (saxWord, tsId))  => root.insert(saxWord, tsId)}
     // TODO    persist //save JSON to file and termNodes to hdfs + raw ts to the (hdfs)/ or to distributed RDB)
       //TODO update part table with JSON info
-       Iterator(root.toJSON) // TODO save to file ' partTable(first._1)._1 + ".json"'
+     // save to file ' partTable(first._1)._1 + ".json"'
+      new PrintWriter(partTable(first._1)._1 + ".json") { write(root.toJSON); close } //TODO path to working dir
+      Iterator(root.toJSON)
    }
- //    roots.foreach(println)
+  // roots.foreach(println)
 
 
 
     /*********************************/
-    /**  Distributed   Queryi       **/
+    /**  Distributed   Query       **/
     /*********************************/
 
 
     /** Parsing partitioning tree from JSON **/
+      //TODO read partTreeJsonString from file
     val json: JsValue = Json.parse(partTreeJsonString) //TODO parameter
     val partTreeDeser = deserJsValue("",json)
 
-    println(partTreeDeser.toJSON)
+  //  println(partTreeDeser.toJSON)
 
     val queryFilePath = "/Users/leva/GoogleDrive/INRIA/ADT_IMITATES/workspace/sparkDPiSAX/datasets/seismic_query_10.txt" //TODO parameter
     val queryRDD = sc.textFile(queryFilePath)
@@ -125,15 +130,28 @@ object DPiSAX  {
 
     val querySAX = tsToSAX(queryRDD)
     val querySAXpart = querySAX.map{case (saxWord, tsId) => (getPartID(saxWord, partRDD.value),(saxWord, tsId))}
+//querySAXpart.collect.map(v => (v._1,(v._2._2, v._2._1.mkString("{", ",", "}")))).foreach(println(_))
 
-/*
     val results =  querySAXpart.partitionBy(new HashPartitioner(numPart)).mapPartitions { part =>
-      // TODO parse corresponding index tree from JSON
+      // parse corresponding index tree from JSON
+      if (part.hasNext) {
+        val first = part.next()
+        val jsString = Source.fromFile(partTable(first._1)._1 + ".json").mkString //TODO path to working dir
+        println(jsString)
+        val json: JsValue = Json.parse(jsString)
+        val root = deserJsValue("", json)
 
-      // TODO get result with centralized approximate search
+        // get result with centralized approximate search
+        var result = Iterator(first._2._2, first._2._1, root.approximateSearch(first._2._1)) // query first
+        result ++= part.map { case (partID, (saxWord, queryId)) => (queryId, saxWord, root.approximateSearch(saxWord)) } //TODO check ++= on Iterator //temporary returns empty array of ts
+        //result.map { case (qid, qw, tslist) => (qid, qw.toString)}.foreach(println(_))
 
+        // result.map { case (qid, qw, tslist) => (qid, qw.mkString("<", ",", ">"), tslist.map { case (tsw, tsid) => (tsw.mkString("<", ",", ">"), tsid) }.mkString) }.foreach(println(_))
+        result
+      }
+      else Iterator()
     }
-*/
+
   }
 
   def deserJsValue(jskey: String, jsval: JsValue) : SaxNode = {

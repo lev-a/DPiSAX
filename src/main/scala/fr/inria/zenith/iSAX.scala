@@ -18,17 +18,13 @@ object iSAX  {
 
 
   private def tsToSAX(ts: Iterator[(Int, Array[Float])]): Iterator[(Array[Int],Int)] = {
-    //TODO file -> data
-
     // normalization
     val tsWithStats = ts.map(t => (t._1, t._2, t._2.sum / t._2.length, t._2.map(x => x * x).sum / t._2.length)).map(t => (t._1, t._2, t._3, sqrt(t._4 - t._3 * t._3).toFloat))
     val tsNorm = tsWithStats.map(t => (t._1, t._2.map(x => (x - t._3) / t._4)))
 
     //PAA
     val segmentSize = ts.next._2.length / config.wordLength
-
     val tsSegments = tsNorm.map(ts => (ts._2.sliding(segmentSize, segmentSize).map(t => t.sum / t.length), ts._1))
-
     tsSegments.map(ts => (ts._1.map(t => config.breakpoints.indexWhere(t <= _)).map(t => if (t == -1) config.breakpoints.length else t).toArray, ts._2))
   }
 

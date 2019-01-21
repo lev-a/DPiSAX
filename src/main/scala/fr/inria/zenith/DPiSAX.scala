@@ -29,8 +29,12 @@ object DPiSAX  {
     val tsNorm = tsWithStats.map(t => (t._1, t._2.map(x => (x - t._3) / t._4)))
 
     //PAA
-    val segmentSize = ts.first._2.length / config.wordLength
-    val tsSegments = tsNorm.map(ts => (ts._2.sliding(segmentSize, segmentSize).map(t => t.sum / t.length), ts._1))
+    val tsLength = ts.first._2.length
+    val segmentSize = tsLength / config.wordLength
+    val numExtraSegments = tsLength % config.wordLength
+    val sliceBorder = (config.wordLength - numExtraSegments)*segmentSize
+    val tsSegments = tsNorm.map(ts => ((ts._2.slice(0,sliceBorder).sliding(segmentSize, segmentSize) ++ ts._2.slice(sliceBorder,tsLength).sliding(segmentSize+1, segmentSize+1)).map(t => t.sum / t.length), ts._1))
+    //val tsSegments = tsNorm.map(ts => (ts._2.sliding(segmentSize, segmentSize).map(t => t.sum / t.length), ts._1))
     tsSegments.map(ts => (ts._1.map(t => config.breakpoints.indexWhere(t <= _)).map(t => if (t == -1) config.breakpoints.length else t).toArray, ts._2))
   }
 
@@ -47,7 +51,7 @@ object DPiSAX  {
     val conf: SparkConf = new SparkConf().setAppName("DPiSAX")
     val sc: SparkContext = new SparkContext(conf)
 
-    //val filename = "/Users/leva/Downloads/ts_1000"
+    //val tsFilePath = "/Users/leva/Downloads/ts_1000"
     val tsFilePath = "/Users/leva/GoogleDrive/INRIA/ADT_IMITATES/workspace/sparkDPiSAX/datasets/Seismic_data.data.csv" //TODO parameter
     val financeData = "/Users/leva/GoogleDrive/INRIA/ADT_IMITATES/workspace/sparkDPiSAX/datasets/Finance_Data.csv"
 
@@ -81,9 +85,9 @@ object DPiSAX  {
     /** Partitioning TAble **/
     val partTable = partTreeRoot.partTable
     val partTreeJsonString = partTreeRoot.toJSON //TODO save to file
-    println (partTreeJsonString)
+    println ("partTreeJsonString = " + partTreeJsonString)
     //partTable.foreach(println)
-    partTable.map(v => (v._1, v._2.mkString("{",",","}"), v._3)).foreach(println)
+   // partTable.map(v => (v._1, v._2.mkString("{",",","}"), v._3)).foreach(println)
 
     def getPartID(tsWord: Array[Int], partTable: Array[((String,Array[Int]),Int)]): Int = {
       def nodeID (saxWord: Array[Int], nodeCard: Array[Int]) = (saxWord zip nodeCard).map {  case (w, c) => (w >> (config.maxCardSymb - c)) + "." + c}.mkString("_")
@@ -97,13 +101,13 @@ object DPiSAX  {
 
   //  inputSAXpart.take(20).foreach(println)
 
-    val roots =  inputSAXpart.partitionBy(new HashPartitioner(numPart)).mapPartitions {part =>
+    val roots =  inputSAXpart.partitionBy(new HashPartitioner(numPart)).foreachPartition {part =>
       val first =  part.next()
       val root = new InternalNode(partTable(first._1)._2.map(_+1),mutable.HashMap.empty)
       root.insert(first._2._1, first._2._2)
       part.foreach{case (partID, (saxWord, tsId))  => root.insert(saxWord, tsId)}
-    // TODO    persist //save JSON to file and termNodes to hdfs + raw ts to the (hdfs)/ or to distributed RDB)
-      //TODO update part table with JSON info
+    // TODO    persist //save JSON to file and termNodes to hdfs + raw ts to the (hdfs)/ or to distributed RDB) --> decided not to redistribute
+      //TODO update part table with JSON info ??? --> no need
      // save to file ' partTable(first._1)._1 + ".json"'
       new PrintWriter(partTable(first._1)._1 + ".json") { write(root.toJSON); close } //TODO path to working dir
       Iterator(root.toJSON)
@@ -119,10 +123,11 @@ object DPiSAX  {
 
     /** Parsing partitioning tree from JSON **/
       //TODO read partTreeJsonString from file
+
     val json: JsValue = Json.parse(partTreeJsonString) //TODO parameter
     val partTreeDeser = deserJsValue("",json)
 
-  //  println(partTreeDeser.toJSON)
+    println("partTreeDeser =" + partTreeDeser.toJSON)
 
     val queryFilePath = "/Users/leva/GoogleDrive/INRIA/ADT_IMITATES/workspace/sparkDPiSAX/datasets/seismic_query_10.txt" //TODO parameter
     val queryRDD = sc.textFile(queryFilePath)
@@ -134,23 +139,32 @@ object DPiSAX  {
 
     val results =  querySAXpart.partitionBy(new HashPartitioner(numPart)).mapPartitions { part =>
       // parse corresponding index tree from JSON
+   //   println("query part")
       if (part.hasNext) {
         val first = part.next()
         val jsString = Source.fromFile(partTable(first._1)._1 + ".json").mkString //TODO path to working dir
-        println(jsString)
+       // println(jsString)
         val json: JsValue = Json.parse(jsString)
         val root = deserJsValue("", json)
 
         // get result with centralized approximate search
-        var result = Iterator(first._2._2, first._2._1, root.approximateSearch(first._2._1)) // query first
-        result ++= part.map { case (partID, (saxWord, queryId)) => (queryId, saxWord, root.approximateSearch(saxWord)) } //TODO check ++= on Iterator //temporary returns empty array of ts
-        //result.map { case (qid, qw, tslist) => (qid, qw.toString)}.foreach(println(_))
-
-        // result.map { case (qid, qw, tslist) => (qid, qw.mkString("<", ",", ">"), tslist.map { case (tsw, tsid) => (tsw.mkString("<", ",", ">"), tsid) }.mkString) }.foreach(println(_))
+        var result = Iterator((first._2._2, first._2._1, root.approximateSearch(first._2._1))) // to query first
+        result ++= part.map { case (partID, (saxWord, queryId)) => (queryId, saxWord, root.approximateSearch(saxWord)) }  //TODO check ++= on Iterator
+       // result.foreach(println)
+       //  result.map { case (qid, qw, tslist) => (qid, qw.mkString("<", ",", ">"), tslist.map { case (tsw, tsid) => (tsw.mkString("<", ",", ">"), tsid) }.mkString) }.foreach(println(_))
         result
       }
       else Iterator()
     }
+    //  results.collect
+    // results.map { case (qid, qw, tslist) => (qid, qw.mkString("<", ",", ">"), tslist.map { case (tsw, tsid) => (tsw.mkString("<", ",", ">"), tsid) }.mkString) }.foreach(println(_))
+    //  results.collect
+     results.map { case (qid, qw, tslist) => (qid,  tslist.map { case (tsw, tsid) =>  tsid }.mkString(","), tslist.length) }.foreach(println(_))
+
+    //TODO on result join with tsFilePath and calculate actual distance to choose top smth
+
+
+    //TODO call exact search
 
   }
 
@@ -160,12 +174,17 @@ object DPiSAX  {
     val nodeCard = js.value("_CARD_").as[String].split(",").map(_.toInt)
 
     if (js.keys.contains("_FILE_")) {
-      //println("TN wordToCard = " + jskey.split("_").map(_.split(".").head.toInt).mkString(",")) //TODO parse wordToCard from nodeID, because we need it to create fileName==nodeID or to use  nodeID of childHash as file name, l
-      //TODO basically for Querying we need just to check if node isInstance of Terminal and read file
-      //println("TN wordToCard =" + jskey.split("_").map(_.split(".")(0).toInt))
-      //TODO read tsIDs array from file
-      new TerminalNode(Array.empty, nodeCard, zeroArray, Array.empty)
-      // create and return terminal node + read ts_list from file
+      /** create and return terminal node + read ts_list from file **/
+      //println("TN wordToCard = " + jskey.split("_").map(_.split(".").head.toInt).mkString(","))
+      //TODO for Querying we don't need the list Of tsIDs, but just link for the file
+
+      val filename = js.value("_FILE_").as[String]
+      //TODO  ==> to keep just tsIDs for further querying
+      val tsFromFile = Source.fromFile(filename).getLines()
+      val tsIDs = tsFromFile.map(_.split(" ")).map(ts => (ts(0).split(",").map(_.toInt).toArray,ts(1).toInt)).toArray
+      val wordToCard = jskey.split("_").map(_.split("\\.")(0).toInt)
+      new TerminalNode(tsIDs, nodeCard, zeroArray, wordToCard)
+
       //TerminalNode (var tsIDs: Array[(Array[Int],Int)], nodeCard: Array[Int], var splitBalance: Array[Int], wordToCard: Array[Int])
     }
     else {

@@ -23,8 +23,14 @@ object iSAX  {
     val tsNorm = tsWithStats.map(t => (t._1, t._2.map(x => (x - t._3) / t._4)))
 
     //PAA
-    val segmentSize = ts.next._2.length / config.wordLength
-    val tsSegments = tsNorm.map(ts => (ts._2.sliding(segmentSize, segmentSize).map(t => t.sum / t.length), ts._1))
+    val tsLength = ts.next._2.length
+    val segmentSize = tsLength / config.wordLength
+    val numExtraSegments = tsLength % config.wordLength
+    val sliceBorder = (config.wordLength - numExtraSegments)*segmentSize
+    val tsSegments = tsNorm.map(ts => ((ts._2.slice(0,sliceBorder).sliding(segmentSize, segmentSize) ++ ts._2.slice(sliceBorder,tsLength).sliding(segmentSize+1, segmentSize+1)).map(t => t.sum / t.length), ts._1))
+
+  //  val segmentSize = ts.next._2.length / config.wordLength
+  //  val tsSegments = tsNorm.map(ts => (ts._2.sliding(segmentSize, segmentSize).map(t => t.sum / t.length), ts._1))
     tsSegments.map(ts => (ts._1.map(t => config.breakpoints.indexWhere(t <= _)).map(t => if (t == -1) config.breakpoints.length else t).toArray, ts._2))
   }
 
@@ -47,7 +53,7 @@ object iSAX  {
         val root = new InternalNode(config.basicCard, mutable.HashMap.empty)
         SAXword.foreach{case (saxWord, tsId) => root.insert(saxWord, tsId)} //returns nothing
 
-       //println (root.toJSON) /** Prints tree to JSON **/
+       println (root.toJSON) /** Prints tree to JSON **/
 
 
     /*********************************/

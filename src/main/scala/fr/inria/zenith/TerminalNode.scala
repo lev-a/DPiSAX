@@ -1,5 +1,7 @@
 package fr.inria.zenith
 
+import java.io.PrintWriter
+
 import com.typesafe.config.ConfigFactory
 
 import scala.collection.mutable
@@ -16,12 +18,13 @@ class TerminalNode (var tsIDs: Array[(Array[Int],Int)], nodeCard: Array[Int], va
 
   override def insert(saxWord: Array[Int] , tsId: Int): Unit  = {
     val wordToCardNext = (saxWord zip nodeCard).map { case (w, c) =>  (w >> (config.maxCardSymb - c - 1) & 0XFF).toByte }
-    splitBalance = splitBalance.zip(wordToCardNext).map(v => v._1 + (v._2*2-1))
+//    splitBalance = splitBalance.zip(wordToCardNext).map(v => v._1 + (v._2*2-1))
+    splitBalance = splitBalance.zip(wordToCardNext).map(v => v._1 + ((v._2 % 2) * 2 - 1))
     //TODO if the cardinality is already max
     tsIDs = tsIDs :+ (saxWord, tsId)
   }
 
-  override def shallSplit : Boolean =  tsIDs.length == config.threshold  && splitCandList.nonEmpty  // and not (cond2) and not (cond3) //  cond2: if all cardinalities nodeCard are already max
+  override def shallSplit : Boolean =  tsIDs.length >= config.threshold  && splitCandList.nonEmpty  // and not (cond2) and not (cond3) //  cond2: if all cardinalities nodeCard are already max
   // cond3: if every element of (abs(splitBalance))  == tsIDs.length
 
 
@@ -36,9 +39,9 @@ class TerminalNode (var tsIDs: Array[(Array[Int],Int)], nodeCard: Array[Int], va
     val newWordToCard = (0 to 1).map(v => wordToCard.updated(elemToSplit, wordToCard(elemToSplit)*2 + v))
 
     // array of 2 new TerminalNodes with new node Card
-    val newTermNodes = newWordToCard.map(v => new TerminalNode(Array.empty, newNodeCard, Array.fill[Int](config.wordLength)(0), v)).toArray
+    var newTermNodes = newWordToCard.map(v => new TerminalNode(Array.empty, newNodeCard, Array.fill[Int](config.wordLength)(0), v)).toArray
 
-    tsIDs.foreach (ts => newTermNodes(ts._1(elemToSplit) >>  ((config.maxCardSymb - newNodeCard(elemToSplit)) & 0XFF).toByte).insert(ts._1, ts._2) )
+    tsIDs.foreach (ts => newTermNodes((ts._1(elemToSplit) >>  ((config.maxCardSymb - newNodeCard(elemToSplit)) & 0XFF).toByte)%2).insert(ts._1, ts._2) )
 
     // new InternalNode with hash to two TermNodes (nodeID -> pointer)
     var childHash  = new mutable.HashMap[String,SaxNode]()
@@ -55,7 +58,12 @@ class TerminalNode (var tsIDs: Array[(Array[Int],Int)], nodeCard: Array[Int], va
    */
   }
 
-  override def toJSON : String = "{\"_CARD_\" :" + nodeCard.mkString("\"",",","\"") + ", " + "\"_FILE_\" :" + "\"" + nodeID + "\"" +  "}"
+  override def toJSON : String = {
+    tsToFile //TODO where should be this call ?
+
+  //  tsIDs.map(v =>(v._1.mkString("<",".",">"), v._2)).sortBy(_._2).take(5).foreach(println)
+    "{\"_CARD_\" :" + nodeCard.mkString("\"", ",", "\"") + ", " + "\"_FILE_\" :" + "\"" + nodeID + "\"" + ", \"_NUM_\":" + tsIDs.length + "}"
+  }
 //  override def toJSON : String =  "{\"_CARD_\" :" + nodeCard.mkString("\"",",","\"") + ", " + "\"_FILE_\" :" + "\"" + nodeID + "\"" + "_" + tsIDs.length + "}"
 //  override def toJSON : String =  "{\"_CARD_\" :" + nodeCard.mkString(",") + ", " + "\"_FILE_\" :" + filename + "[" + tsIDs.map(v =>(v._1.mkString("<",".",">"), v._2)).mkString + "]" + "}"
 
@@ -67,7 +75,7 @@ class TerminalNode (var tsIDs: Array[(Array[Int],Int)], nodeCard: Array[Int], va
 
   override def partTable  : Array[ (String,Array[Int],Int)] = Array((nodeID, nodeCard,  tsIDs.length))
 
-  //TODO save to file method tsID + word ???
+  def tsToFile = new PrintWriter(nodeID) { tsIDs.foreach(t => write (t._1.mkString(",") + " " + t._2 + "\n") ); close } //TODO path to working dir   //TODO save raw data
 
 }
 

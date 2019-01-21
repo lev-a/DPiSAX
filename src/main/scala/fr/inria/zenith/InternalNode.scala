@@ -29,7 +29,9 @@ class InternalNode (nodeCard /* card */: Array[Int], childHash: mutable.HashMap[
       child.insert(saxWord, tsId)
     }
     else { // when TerminalNode doesn't exist
-      this.childHash += nodeID -> new TerminalNode(Array((saxWord, tsId)), nodeCard, Array.fill[Int](config.wordLength)(0), wordToCard(saxWord))
+      var newTermNode = new TerminalNode(Array.empty, nodeCard, Array.fill[Int](config.wordLength)(0), wordToCard(saxWord))
+      this.childHash += nodeID -> newTermNode
+      newTermNode.insert(saxWord, tsId)
     }
 
   }

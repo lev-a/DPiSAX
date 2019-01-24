@@ -39,8 +39,8 @@ object iSAX  {
 
 
     //val filename = "/Users/leva/Downloads/ts_1000"
-    val tsFilePath = "/Users/leva/GoogleDrive/INRIA/ADT_IMITATES/workspace/sparkDPiSAX/datasets/Seismic_data.data.csv" //TODO parameter
-    val financeData = "/Users/leva/GoogleDrive/INRIA/ADT_IMITATES/workspace/sparkDPiSAX/datasets/Finance_Data.csv"
+    val tsFilePath = "./datasets/Seismic_data.data.csv" //TODO parameter
+    val financeData = "./datasets/Finance_Data.csv"
 
     /** Indexing - Centralized  **/
     val tsInput = Source.fromFile(tsFilePath).getLines().map(_.split(",")).map(t => (t(0).toInt, t.tail.map(_.toFloat)))
@@ -65,7 +65,7 @@ object iSAX  {
 
 
     //val queryfile = "/Users/leva/Downloads/query_test.txt" //TODO parameter
-    val queryfile = "/Users/leva/GoogleDrive/INRIA/ADT_IMITATES/workspace/sparkDPiSAX/datasets/seismic_query_10.txt"
+    val queryfile = "./datasets/seismic_query_10.txt"
     //val queryfile = "/Users/leva/Downloads/query_10"
     val queryInput = Source.fromFile(queryfile).getLines().map(_.split(",")).map(t => (t(0).toInt, t.tail.map(_.toFloat)))
     val querySAXword = tsToSAX(queryInput)

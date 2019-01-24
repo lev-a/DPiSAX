@@ -18,8 +18,6 @@ import scala.io.Source
 
 object DPiSAX  {
 
-  val topk = 10 // TODO: parameter
-
   val config = AppConfig(ConfigFactory.load())
   def zeroArray =  Array.fill[Int](config.wordLength)(0)
 
@@ -40,8 +38,8 @@ object DPiSAX  {
     val sc: SparkContext = new SparkContext(conf)
 
     //val tsFilePath = "/Users/leva/Downloads/ts_1000"
-    val tsFilePath = "/Users/bkolev/workspace/dpisax/datasets/Seismic_data.data.csv" //TODO parameter
-    val financeData = "/Users/bkolev/workspace/dpisax/datasets/Finance_Data.csv"
+    val tsFilePath = "./datasets/Seismic_data.data.csv" //TODO parameter
+    val financeData = "./datasets/Finance_Data.csv"
 
     /*********************************/
     /** Indexing -  Distributed     **/
@@ -117,7 +115,7 @@ object DPiSAX  {
 
     println("partTreeDeser =" + partTreeDeser.toJSON)
 
-    val queryFilePath = "/Users/bkolev/workspace/dpisax/datasets/seismic_query_10.txt" //TODO parameter
+    val queryFilePath = "./datasets/seismic_query_10.txt" //TODO parameter
     val queryRDD = sc.textFile(queryFilePath)
                     .map( _.split(',') ).map( t => (t(0).toInt, config.normalize(t.tail.map(_.toFloat)) ) )
 
@@ -154,16 +152,20 @@ object DPiSAX  {
 //     results.map { case (qid, qw, tslist) => (qid,  tslist.map { case (tsw, tsid) =>  tsid }.mkString(","), tslist.length) }.foreach(println(_))
 
     val approxRDD = results.flatMap{ case (qid, qw, tslist) => tslist.map( t => (t._2, qid) ) }
-      .join(inputRDD).map{ case(tsid, (qid, tsdata)) => (qid, (tsid, tsdata)) }
-      .combineByKey(v => Array(v), (xs:Array[(Int, Array[Float])], v) => xs :+ v, (xs:Array[(Int, Array[Float])], ys:Array[(Int, Array[Float])]) => xs ++ ys)
-      .join(querySAX).map{ case(qid, (tslist, (qdata, (q_paa, q_sax)))) => ( qid, q_paa, tslist.map( t => (t._1, t._2, config.distance(qdata, t._2)) ).sortBy(_._3).take(topk) ) }
+      .join(inputRDD)
+      .map{ case(tsid, (qid, tsdata)) => (qid, (tsid, tsdata)) }
+      .combineByKey(v => Array(v)
+        , (xs:Array[(Int, Array[Float])], v) => xs :+ v
+        , (xs:Array[(Int, Array[Float])], ys:Array[(Int, Array[Float])]) => xs ++ ys)
+      .join(querySAX)
+      .map{ case(qid, (tslist, (qdata, (q_paa, q_sax)))) => ( qid, q_paa, qdata, tslist.map( t => (t._1, t._2, config.distance(qdata, t._2)) ).sortBy(_._3).take(config.topk) ) }
 
     approxRDD.cache()
 
     val t3 = System.currentTimeMillis()
 
     println("\nApproximate:")
-    approxRDD.collect().map{ case (q_id, q_paa, res) => "(" + q_id + " " + res.map(r => "(" + r._1 + ", " + r._3 + ")").mkString("<", ",", ">") }.foreach(println(_))
+    approxRDD.collect().map{ case (q_id, q_paa, qdata, res) => "(" + q_id + " " + res.map(r => "(" + r._1 + ", " + r._3 + ")").mkString("<", ",", ">") }.foreach(println(_))
 
     val t4 = System.currentTimeMillis()
     println("Elapsed time: " + (t4 - t3)  + " ms")
@@ -173,7 +175,7 @@ object DPiSAX  {
     /**  Exact Search       **/
     /*********************************/
 
-    val queryExact = sc.parallelize(0 until numPart) cartesian approxRDD.filter(_._3.length > 0).map( q => (q._1, q._2, q._3.last._3) )
+    val queryExact = sc.parallelize(0 until numPart) cartesian approxRDD.filter(_._3.length > 0).map{ case (qid, q_paa, qdata, res) => (qid, q_paa, res.last._3) } // TODO: switch to full search whwn approx gives no result
 
     val resultsExact = queryExact.partitionBy(new HashPartitioner(numPart)).mapPartitions { part =>
       // parse corresponding index tree from JSON
@@ -195,19 +197,22 @@ object DPiSAX  {
       else Iterator()
     }
 
-    val exactRDD = resultsExact.flatMap{ case (qid, tslist) => tslist.map( t => (t._2, qid) ) }
-      .join(inputRDD).map{ case(tsid, (qid, tsdata)) => (qid, (tsid, tsdata)) }
-      .combineByKey(v => Array(v), (xs:Array[(Int, Array[Float])], v) => xs :+ v, (xs:Array[(Int, Array[Float])], ys:Array[(Int, Array[Float])]) => xs ++ ys)
-      .join(querySAX).map{ case(qid, (tslist, (qdata, (q_paa, q_sax)))) => ( qid, tslist.map( t => (t._1, t._2, config.distance(qdata, t._2)) ).sortBy(_._3).take(topk) ) }
 /*
+    val exactRDD = resultsExact.flatMap{ case (qid, tslist) => tslist.map( t => (t._2, qid) ) }
+      .join(inputRDD)
+      .map{ case(tsid, (qid, tsdata)) => (qid, (tsid, tsdata)) }
+      .combineByKey(v => Array(v), (xs:Array[(Int, Array[Float])], v) => xs :+ v, (xs:Array[(Int, Array[Float])], ys:Array[(Int, Array[Float])]) => xs ++ ys)
+      .join(querySAX)
+      .map{ case(qid, (tslist, (qdata, (q_paa, q_sax)))) => ( qid, tslist.map( t => (t._1, t._2, config.distance(qdata, t._2)) ).sortBy(_._3).take(topk) ) }
+*/
+
     val exactRDD = resultsExact.map(r => (r._1, r._2.map(_._2))) // keep only ids
       .join(querySAX).flatMap{ case(q_id, (res, (q_data, (q_paa, q_sax)))) => res.map(t_id => (t_id, (q_id, q_paa, q_data))) }
-      .join(inputRDD).map{ case(t_id, ((q_id, q_paa, q_data), t_data)) => (q_id, (q_paa, t_id, t_data, config.distance(q_data, t_data))) }
-      .combineByKey(v => (v._1, Array((v._2, v._3, v._4)))
-        , (xs: (Array[Float], Array[(Int, Array[Float], Float)]), v) => (xs._1, xs._2 :+ (v._2, v._3, v._4))
-        , (xs: (Array[Float], Array[(Int, Array[Float], Float)]), ys: (Array[Float], Array[(Int, Array[Float], Float)])) => (xs._1, xs._2 ++ ys._2))
-      .map{ case(q_id, (q_paa, res)) => (q_id, q_paa, res.sortWith(_._3 < _._3).take(topk)) }
-*/
+      .join(inputRDD).map{ case(t_id, ((q_id, q_paa, q_data), t_data)) => (q_id, (t_id, config.distance(q_data, t_data))) }
+      .combineByKey(v => Array(v)
+        , (xs: Array[(Int, Float)], v) => xs :+ v
+        , (xs: Array[(Int, Float)], ys: Array[(Int, Float)]) => xs ++ ys)
+      .map{ case(q_id, res) => (q_id, res.sortWith(_._2 < _._2).take(config.topk)) }
 
     val t5 = System.currentTimeMillis()
 

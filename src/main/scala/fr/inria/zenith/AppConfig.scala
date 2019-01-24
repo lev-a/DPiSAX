@@ -8,12 +8,15 @@ import scala.math._
   */
 case class AppConfig (config: Config) {
 
-  val workDir =  "/Users/leva/Documents/dpisax_res/"
+  val workDir =  "../dpisax_res/"
 
   val maxCardSymb = config.getInt("maxCardSymb.value")
   val wordLength: Integer = config.getInt("wordLength.value")
 
   val threshold = config.getInt("threshold.value")
+
+  val topk = 10
+
 //  val someOtherSetting = config.getString("some_other_setting")
   def basicCard = Array.fill[Int](wordLength)(1)
   //TODO breakpoints read from file

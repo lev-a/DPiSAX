@@ -61,6 +61,10 @@ class InternalNode (nodeCard /* card */: Array[Int], childHash: mutable.HashMap[
      //TODO key not found exception
   }
 
+  override def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int): Array[(Array[Int], Int)] = {
+    childHash.map( _._2.boundedSearch(paa, bound, tsLength) ).reduce(_++_)
+  }
+
   def partTreeSplit (nodeToSplitID: String) : Unit = {
 
     if (childHash.contains(nodeToSplitID) && childHash(nodeToSplitID).isInstanceOf[TerminalNode] ){

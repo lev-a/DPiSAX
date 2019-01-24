@@ -71,6 +71,13 @@ class TerminalNode (var tsIDs: Array[(Array[Int],Int)], nodeCard: Array[Int], va
 
   override def approximateSearch(saxWord: Array[Int]) : Array[(Array[Int],Int)] = tsIDs
 
+  override def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int): Array[(Array[Int], Int)] = {
+    if (config.mindist(paa, wordToCard, nodeCard, tsLength) <= bound)
+      tsIDs.filter( t => config.mindist(paa, t._1, Array.fill[Int](config.wordLength)(config.maxCardSymb), tsLength) <= bound )
+    else
+      Array.empty
+  }
+
   def partTreeSplit (node: String) : Unit  =  if (node == nodeID) this.split()
 
   override def partTable  : Array[ (String,Array[Int],Int)] = Array((nodeID, nodeCard,  tsIDs.length))

@@ -13,6 +13,8 @@ abstract class SaxNode {
 
   def approximateSearch(saxWord: Array[Int]) : Array[(Array[Int],Int)]
 
+  def fullSearch : Array[(Array[Int],Int)]
+
   def toJSON : String
 
   def partTreeSplit (node: String) : Unit

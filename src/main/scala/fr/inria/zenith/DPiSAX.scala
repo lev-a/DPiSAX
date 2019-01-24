@@ -74,7 +74,7 @@ object DPiSAX  {
     val tsSample = inputRDD.sample(false,sampleSize)
     val sampleToSAX = tsToSAX(tsSample)
 
-    var partTree = new TerminalNode(Array.empty, zeroArray, zeroArray, zeroArray )
+    var partTree = new TerminalNode(Array.empty, zeroArray, config.basicSplitBalance(zeroArray), zeroArray )
     sampleToSAX.collect.foreach{case (saxWord, tsId) => partTree.insert(saxWord, tsId)}
   //  println (partTree.toJSON)
     val partTreeRoot  = partTree.split()
@@ -178,12 +178,12 @@ object DPiSAX  {
       //println("TN wordToCard = " + jskey.split("_").map(_.split(".").head.toInt).mkString(","))
       //TODO for Querying we don't need the list Of tsIDs, but just link for the file
 
-      val filename = js.value("_FILE_").as[String]
+      val filename = config.workDir + js.value("_FILE_").as[String]
       //TODO  ==> to keep just tsIDs for further querying
       val tsFromFile = Source.fromFile(filename).getLines()
       val tsIDs = tsFromFile.map(_.split(" ")).map(ts => (ts(0).split(",").map(_.toInt).toArray,ts(1).toInt)).toArray
       val wordToCard = jskey.split("_").map(_.split("\\.")(0).toInt)
-      new TerminalNode(tsIDs, nodeCard, zeroArray, wordToCard)
+      new TerminalNode(tsIDs, nodeCard, config.basicSplitBalance(nodeCard), wordToCard)
 
       //TerminalNode (var tsIDs: Array[(Array[Int],Int)], nodeCard: Array[Int], var splitBalance: Array[Int], wordToCard: Array[Int])
     }

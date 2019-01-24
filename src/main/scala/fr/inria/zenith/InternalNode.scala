@@ -29,7 +29,7 @@ class InternalNode (nodeCard /* card */: Array[Int], childHash: mutable.HashMap[
       child.insert(saxWord, tsId)
     }
     else { // when TerminalNode doesn't exist
-      var newTermNode = new TerminalNode(Array.empty, nodeCard, Array.fill[Int](config.wordLength)(0), wordToCard(saxWord))
+      var newTermNode = new TerminalNode(Array.empty, nodeCard, config.basicSplitBalance(nodeCard), wordToCard(saxWord))
       this.childHash += nodeID -> newTermNode
       newTermNode.insert(saxWord, tsId)
     }
@@ -46,6 +46,7 @@ class InternalNode (nodeCard /* card */: Array[Int], childHash: mutable.HashMap[
 
    // val word = wordToCard(saxWord).mkString("\"",",","\"")
     val nodeID : String  = (wordToCard(saxWord) zip nodeCard).map{case (w,c) => s"$w.$c"}.mkString("_")
+  //  println("nodeID = " + nodeID)
 /*
     try{
       childHash(word).approximateSearch(saxWord)
@@ -56,14 +57,20 @@ class InternalNode (nodeCard /* card */: Array[Int], childHash: mutable.HashMap[
 
     if (childHash.contains(nodeID)) //needed only for root node
    {
-      childHash(nodeID).approximateSearch(saxWord)}
+      childHash(nodeID).approximateSearch(saxWord)
+   }
+    else if (childHash.size == 1) {
+
+      childHash.head._2.fullSearch  // fuul search on the tree from current node and return all TerminalNodes
+    }
     else Array.empty
      //TODO key not found exception
   }
 
-  override def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int): Array[(Array[Int], Int)] = {
+  override def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int): Array[(Array[Int], Int)] =
     childHash.map( _._2.boundedSearch(paa, bound, tsLength) ).reduce(_++_)
-  }
+
+  def fullSearch : Array[(Array[Int],Int)] = childHash.flatMap(_._2.fullSearch).toArray
 
   def partTreeSplit (nodeToSplitID: String) : Unit = {
 
@@ -71,7 +78,6 @@ class InternalNode (nodeCard /* card */: Array[Int], childHash: mutable.HashMap[
       var child = childHash(nodeToSplitID)
       child = child.split()
       childHash(nodeToSplitID) = child
-   //   childHash(nodeToSplitID).split(nodeCard)
       }
     else childHash.foreach(_._2.partTreeSplit(nodeToSplitID))
   }

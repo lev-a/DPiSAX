@@ -53,7 +53,7 @@ object iSAX  {
         val root = new InternalNode(config.basicCard, mutable.HashMap.empty)
         SAXword.foreach{case (saxWord, tsId) => root.insert(saxWord, tsId)} //returns nothing
 
-       println (root.toJSON) /** Prints tree to JSON **/
+ //      println (root.toJSON) /** Prints tree to JSON **/
 
 
     /*********************************/
@@ -64,8 +64,9 @@ object iSAX  {
     /** Querying - Centralized  **/
 
 
-    val queryfile = "/Users/leva/Downloads/query_test.txt" //TODO parameter
-        //val queryfile = "/Users/leva/Downloads/query_10"
+    //val queryfile = "/Users/leva/Downloads/query_test.txt" //TODO parameter
+    val queryfile = "/Users/leva/GoogleDrive/INRIA/ADT_IMITATES/workspace/sparkDPiSAX/datasets/seismic_query_10.txt"
+    //val queryfile = "/Users/leva/Downloads/query_10"
     val queryInput = Source.fromFile(queryfile).getLines().map(_.split(",")).map(t => (t(0).toInt, t.tail.map(_.toFloat)))
     val querySAXword = tsToSAX(queryInput)
      //querySAXword.map(v => (v._2, v._1.mkString("{", ",", "}"))).foreach(println(_))
@@ -75,7 +76,9 @@ object iSAX  {
     val result = querySAXword.map(query => (query._2,query._1, root.approximateSearch(query._1))) // tuple of (Q_id, Q_word, List_of_tsIDs: Array[(Array[Int],Int)] )
 
     //  result.map { case (qid, tslist) => (qid,  tslist.map { case (tsw, tsid) => (tsw.mkString("<", ",", ">"), tsid) }.mkString) }.foreach(println(_))
-    result.map { case (qid, qw, tslist) => (qid, qw.mkString("<", ",", ">"), tslist.map { case (tsw, tsid) => (tsw.mkString("<", ",", ">"), tsid) }.mkString) }.foreach(println(_))
+  //  result.map { case (qid, qw, tslist) => (qid, qw.mkString("<", ",", ">"), tslist.map { case (tsw, tsid) => (tsw.mkString("<", ",", ">"), tsid) }.mkString) }.foreach(println(_))
+    result.map { case (qid, qw, tslist) => (qid,  tslist.map { case (tsw, tsid) =>  tsid }.mkString(","), tslist.length) }.foreach(println(_))
+
 
 
     //TODO Exact Search

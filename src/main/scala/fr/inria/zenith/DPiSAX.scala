@@ -30,6 +30,23 @@ object DPiSAX  {
     tree.partTreeSplit(partNode)
   }
 
+  def runPLS(inputRDD: RDD[(Int, Array[Float])], queryRDD: RDD[(Int, Array[Float])]) : Unit = {
+
+    val plsRDD = (queryRDD cartesian inputRDD).map{ case ((q_id, q_data), (t_id, t_data)) => (q_id, (t_id, config.distance(q_data, t_data))) }
+      .combineByKey(v => Array(v)
+        , (xs: Array[(Int, Float)], v) => xs :+ v
+        , (xs: Array[(Int, Float)], ys: Array[(Int, Float)]) => xs ++ ys)
+      .map{ case(q_id, res) => (q_id, res.sortWith(_._2 < _._2).take(config.topk)) }
+
+    val t1 = System.currentTimeMillis()
+
+    println("PLS:")
+    plsRDD.map{ case (q_id, res) => "(" + q_id + " " + res.map(r => "(" + r._1 + ", " + r._2 + ")").mkString("<", ",", ">") }.collect().foreach(println(_))
+
+    val t2 = System.currentTimeMillis()
+    println("Elapsed time: " + (t2 - t1)  + " ms")
+
+  }
 
 
   def main(args: Array[String]): Unit = {
@@ -118,6 +135,10 @@ object DPiSAX  {
     val queryFilePath = "./datasets/seismic_query_10.txt" //TODO parameter
     val queryRDD = sc.textFile(queryFilePath)
                     .map( _.split(',') ).map( t => (t(0).toInt, config.normalize(t.tail.map(_.toFloat)) ) )
+
+
+    runPLS(inputRDD, queryRDD)
+
 
     val querySAX = queryRDD.map( t => ( t._1, (t._2, config.tsToPAAandSAX(t._2)) ) )
     querySAX.cache()

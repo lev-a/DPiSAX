@@ -55,7 +55,7 @@ class InternalNode (nodeCard /* card */: Array[Int], childHash: mutable.HashMap[
     }
     */
 
-    if (childHash.contains(nodeID)) //needed only for root node
+    if (childHash.contains(nodeID))
    {
       childHash(nodeID).approximateSearch(saxWord)
    }
@@ -64,7 +64,6 @@ class InternalNode (nodeCard /* card */: Array[Int], childHash: mutable.HashMap[
       childHash.head._2.fullSearch  // fuul search on the tree from current node and return all TerminalNodes
     }
     else Array.empty
-     //TODO key not found exception
   }
 
   override def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int): Array[(Array[Int], Int)] =

@@ -19,8 +19,22 @@ import scala.io.Source
 object DPiSAX  {
 
   val config = AppConfig(ConfigFactory.load())
-  def zeroArray =  Array.fill[Int](config.wordLength)(0)
+//  def zeroArray =  Array.fill[Int](config.wordLength)(0)
 
+  private def readRDD(sc: SparkContext, tsFile: String) = {
+   // val tsFilePath = config.tsFilePath
+    val numPart = config.numPart
+    val firstCol = config.firstCol
+
+    val distFile = if ( Array("txt", "csv").contains(tsFile.slice(tsFile.length - 3, tsFile.length)) )
+      (if (numPart == 0) sc.textFile(tsFile) else sc.textFile(tsFile, numPart))
+        .map( _.split(',') ).map( t => (t(0).toInt, t.slice(firstCol, t.length).map(_.toFloat) ) )
+    else
+    if (numPart == 0) sc.objectFile[(Int, (Array[Float]))](tsFile)
+    else sc.objectFile[(Int, (Array[Float]))](tsFile, numPart)
+
+    distFile.map(ts => (ts._1, config.normalize(ts._2)))
+  }
 
   private def tsToSAX(ts: RDD[(Int, Array[Float])]): RDD[(Array[Int],Int)] = ts.map(t => (config.tsToSAX(t._2), t._1))
 
@@ -51,39 +65,40 @@ object DPiSAX  {
 
   def main(args: Array[String]): Unit = {
 
-    val conf: SparkConf = new SparkConf().setAppName("DPiSAX")
+    val conf: SparkConf = new SparkConf().setAppName("DPiSAX")  //TODO move to AppConfig
     val sc: SparkContext = new SparkContext(conf)
 
     //val tsFilePath = "/Users/leva/Downloads/ts_1000"
-    val tsFilePath = "./datasets/Seismic_data.data.csv" //TODO parameter
-    val financeData = "./datasets/Finance_Data.csv"
+  //  val tsFilePath = "./datasets/Seismic_data.data.csv" //TODO parameter
+  val tsFilePath = config.tsFilePath
+   // val financeData = "./datasets/Finance_Data.csv"
 
     /*********************************/
     /** Indexing -  Distributed     **/
     /*********************************/
-    val inputRDD = sc.textFile(tsFilePath)
-                     .map( _.split(',') ).map( t => (t(0).toInt, config.normalize(t.tail.map(_.toFloat)) ) )
+    val inputRDD = readRDD(sc, tsFilePath)
+      //sc.textFile(tsFilePath)
+       //              .map( _.split(',') ).map( t => (t(0).toInt, config.normalize(t.tail.map(_.toFloat)) ) )
 
-    val inputFinanceRDD = sc.textFile(financeData)
-      .map( _.split(',') ).map( t => (t(0).toInt, config.normalize(t.tail.tail.map(_.toFloat)) ) )
+   // val inputFinanceRDD = sc.textFile(financeData)
+   //   .map( _.split(',') ).map( t => (t(0).toInt, config.normalize(t.tail.tail.map(_.toFloat)) ) )
 
     /*********************************/
     /** Building partitioning tree  **/
     /*********************************/
-    val numPart = 8 //TODO parameter = number of workers/cores
+  //  val numPart = config.numPart
 
     /** Sampling **/
-    val sampleSize = 0.2 //TODO parameter
-    val tsSample = inputRDD.sample(false,sampleSize)
+    val tsSample = inputRDD.sample(false,config.sampleSize)
     val sampleToSAX = tsToSAX(tsSample)
 
-    var partTree = new TerminalNode(Array.empty, zeroArray, config.basicSplitBalance(zeroArray), zeroArray )
+    var partTree = new TerminalNode(Array.empty, config.zeroArray, config.basicSplitBalance(config.zeroArray), config.zeroArray )
     sampleToSAX.collect.foreach{case (saxWord, tsId) => partTree.insert(saxWord, tsId)}
   //  println (partTree.toJSON)
     val partTreeRoot  = partTree.split()
 //    println (partTreeRoot.toJSON)
 
-    0 until numPart-2 foreach { _ =>  partTreeSplit(partTreeRoot) }
+    0 until config.numPart-2 foreach { _ =>  partTreeSplit(partTreeRoot) }
 
     /** Partitioning TAble **/
     val partTable = partTreeRoot.partTable
@@ -104,15 +119,14 @@ object DPiSAX  {
 
   //  inputSAXpart.take(20).foreach(println)
 
-    val roots =  inputSAXpart.partitionBy(new HashPartitioner(numPart)).foreachPartition {part =>
+    //val roots =
+    inputSAXpart.partitionBy(new HashPartitioner(config.numPart)).foreachPartition {part =>
       val first =  part.next()
       val root = new InternalNode(partTable(first._1)._2.map(_+1),mutable.HashMap.empty)
       root.insert(first._2._1, first._2._2)
       part.foreach{case (partID, (saxWord, tsId))  => root.insert(saxWord, tsId)}
-    // TODO    persist //save JSON to file and termNodes to hdfs + raw ts to the (hdfs)/ or to distributed RDB) --> decided not to redistribute
-      //TODO update part table with JSON info ??? --> no need
      // save to file ' partTable(first._1)._1 + ".json"'
-      new PrintWriter(partTable(first._1)._1 + ".json") { write(root.toJSON); close } //TODO path to working dir
+      new PrintWriter(config.workDir + partTable(first._1)._1 + ".json") { write(root.toJSON); close }
       Iterator(root.toJSON)
    }
   // roots.foreach(println)
@@ -130,12 +144,13 @@ object DPiSAX  {
     val json: JsValue = Json.parse(partTreeJsonString) //TODO parameter
     val partTreeDeser = deserJsValue("",json)
 
-    println("partTreeDeser =" + partTreeDeser.toJSON)
+   // println("partTreeDeser =" + partTreeDeser.toJSON)
 
-    val queryFilePath = "./datasets/seismic_query_10.txt" //TODO parameter
-    val queryRDD = sc.textFile(queryFilePath)
-                    .map( _.split(',') ).map( t => (t(0).toInt, config.normalize(t.tail.map(_.toFloat)) ) )
-
+   // val queryFilePath = "./datasets/seismic_query_10.txt" //TODO parameter
+   val queryFilePath = config.queryFilePath
+    val queryRDD = readRDD(sc, queryFilePath)
+   // val queryRDD = sc.textFile(queryFilePath)
+   //                 .map( _.split(',') ).map( t => (t(0).toInt, config.normalize(t.tail.map(_.toFloat)) ) )
 
     runPLS(inputRDD, queryRDD)
 
@@ -148,19 +163,19 @@ object DPiSAX  {
     val querySAXpart = querySAX.map{case (tsId, (data, (paa, saxWord))) => (getPartID(saxWord, partRDD.value),(saxWord, tsId))}
 //querySAXpart.collect.map(v => (v._1,(v._2._2, v._2._1.mkString("{", ",", "}")))).foreach(println(_))
 
-    val results =  querySAXpart.partitionBy(new HashPartitioner(numPart)).mapPartitions { part =>
+    val results =  querySAXpart.partitionBy(new HashPartitioner(config.numPart)).mapPartitions { part =>
       // parse corresponding index tree from JSON
    //   println("query part")
       if (part.hasNext) {
         val first = part.next()
-        val jsString = Source.fromFile(partRDD.value(first._1)._1._1 + ".json").mkString //TODO path to working dir
+        val jsString = Source.fromFile(config.workDir + partRDD.value(first._1)._1._1 + ".json").mkString
        // println(jsString)
         val json: JsValue = Json.parse(jsString)
         val root = deserJsValue("", json)
 
         // get result with centralized approximate search
         var result = Iterator((first._2._2, first._2._1, root.approximateSearch(first._2._1))) // to query first
-        result ++= part.map { case (partID, (saxWord, queryId)) => (queryId, saxWord, root.approximateSearch(saxWord)) }  //TODO check ++= on Iterator
+        result ++= part.map { case (partID, (saxWord, queryId)) => (queryId, saxWord, root.approximateSearch(saxWord)) }
        // result.foreach(println)
        //  result.map { case (qid, qw, tslist) => (qid, qw.mkString("<", ",", ">"), tslist.map { case (tsw, tsid) => (tsw.mkString("<", ",", ">"), tsid) }.mkString) }.foreach(println(_))
         result
@@ -196,21 +211,21 @@ object DPiSAX  {
     /**  Exact Search       **/
     /*********************************/
 
-    val queryExact = sc.parallelize(0 until numPart) cartesian approxRDD.filter(_._3.length > 0).map{ case (qid, q_paa, qdata, res) => (qid, q_paa, res.last._3) } // TODO: switch to full search whwn approx gives no result
+    val queryExact = sc.parallelize(0 until config.numPart) cartesian approxRDD.filter(_._3.length > 0).map{ case (qid, q_paa, qdata, res) => (qid, q_paa, res.last._3) } // TODO: switch to full search whwn approx gives no result
 
-    val resultsExact = queryExact.partitionBy(new HashPartitioner(numPart)).mapPartitions { part =>
+    val resultsExact = queryExact.partitionBy(new HashPartitioner(config.numPart)).mapPartitions { part =>
       // parse corresponding index tree from JSON
       //   println("query part")
       if (part.hasNext) {
         val first = part.next()
-        val jsString = Source.fromFile(partRDD.value(first._1)._1._1 + ".json").mkString //TODO path to working dir
+        val jsString = Source.fromFile(config.workDir + partRDD.value(first._1)._1._1 + ".json").mkString
         // println(jsString)
         val json: JsValue = Json.parse(jsString)
         val root = deserJsValue("", json)
 
         // get result with centralized approximate search
         var result = Iterator((first._2._1, root.boundedSearch(first._2._2, first._2._3, tsLength))) // to query first
-        result ++= part.map { case (partId, (queryId, queryPAA, queryBound)) => (queryId, root.boundedSearch(queryPAA, queryBound, tsLength)) }  //TODO check ++= on Iterator
+        result ++= part.map { case (partId, (queryId, queryPAA, queryBound)) => (queryId, root.boundedSearch(queryPAA, queryBound, tsLength)) }
         // result.foreach(println)
         //  result.map { case (qid, qw, tslist) => (qid, qw.mkString("<", ",", ">"), tslist.map { case (tsw, tsid) => (tsw.mkString("<", ",", ">"), tsid) }.mkString) }.foreach(println(_))
         result
@@ -243,10 +258,6 @@ object DPiSAX  {
     val t6 = System.currentTimeMillis()
     println("Elapsed time: " + (t6 - t5)  + " ms")
 
-    //TODO on result join with tsFilePath and calculate actual distance to choose top smth
-
-
-    //TODO call exact search
 
   }
 
@@ -258,16 +269,12 @@ object DPiSAX  {
     if (js.keys.contains("_FILE_")) {
       /** create and return terminal node + read ts_list from file **/
       //println("TN wordToCard = " + jskey.split("_").map(_.split(".").head.toInt).mkString(","))
-      //TODO for Querying we don't need the list Of tsIDs, but just link for the file
 
       val filename = config.workDir + js.value("_FILE_").as[String]
-      //TODO  ==> to keep just tsIDs for further querying
       val tsFromFile = Source.fromFile(filename).getLines()
       val tsIDs = tsFromFile.map(_.split(" ")).map(ts => (ts(0).split(",").map(_.toInt).toArray,ts(1).toInt)).toArray
       val wordToCard = jskey.split("_").map(_.split("\\.")(0).toInt)
       new TerminalNode(tsIDs, nodeCard, config.basicSplitBalance(nodeCard), wordToCard)
-
-      //TerminalNode (var tsIDs: Array[(Array[Int],Int)], nodeCard: Array[Int], var splitBalance: Array[Int], wordToCard: Array[Int])
     }
     else {
       var childHash  = new mutable.HashMap[String,SaxNode]()

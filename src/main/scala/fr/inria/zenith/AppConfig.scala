@@ -9,14 +9,22 @@ import org.apache.commons.math3.distribution.NormalDistribution
   */
 case class AppConfig (config: Config) {
 
-  val workDir =  "../dpisax_res/"
+  val workDir =  "/Users/leva/Documents/dpisax_res/"
 
-  val maxCardSymb = config.getInt("maxCardSymb.value")
-  val wordLength: Integer = config.getInt("wordLength.value")
-
-  val threshold = config.getInt("threshold.value")
+  val maxCardSymb = config.getInt("maxCardSymb")
+  val wordLength: Integer = config.getInt("wordLength")
+  val threshold = config.getInt("threshold")
 
   val topk = 10
+  val tsFilePath = config.getString("tsFilePath")
+  val firstCol = config.getInt("firstCol")
+  val numPart = config.getInt("numPart") //TODO parameter = number of workers/cores
+ // val executors = sc.getExecutorMemoryStatus.size
+ // val coresPerEx = sc.getConf.getInt("spark.executor.cores", 8)
+
+  val sampleSize = config.getDouble("sampleSize")
+
+  val queryFilePath = config.getString("queryFilePath")
 
 //  val someOtherSetting = config.getString("some_other_setting")
 
@@ -29,6 +37,8 @@ case class AppConfig (config: Config) {
   }
 
   def basicCard = Array.fill[Int](wordLength)(1)
+
+  def zeroArray =  Array.fill[Int](wordLength)(0)
 
   def nodeID(wordToCard: Array[Int], nodeCard: Array[Int]) : String  = (wordToCard zip nodeCard).map{case (w,c) => s"$w.$c"}.mkString("_")
 

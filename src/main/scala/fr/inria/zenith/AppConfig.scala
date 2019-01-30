@@ -9,6 +9,8 @@ import org.apache.commons.math3.distribution.NormalDistribution
   */
 case class AppConfig (config: Config) {
 
+  type TSWithStats = (Array[Float], (Float, Float))
+
   val workDir =  config.getString("workDir")
 
   val maxCardSymb = config.getInt("maxCardSymb")
@@ -20,7 +22,7 @@ case class AppConfig (config: Config) {
   val queryFilePath = config.getString("queryFilePath")
   val firstCol = config.getInt("firstCol")
 
-  val numPart = config.getInt("numPart") //TODO parameter = number of workers/cores
+  val numPart = config.getInt("numPart") // TODO parameter = number of workers/cores
  // val executors = sc.getExecutorMemoryStatus.size
  // val coresPerEx = sc.getConf.getInt("spark.executor.cores", 8)
 
@@ -44,14 +46,19 @@ case class AppConfig (config: Config) {
 
   def basicSplitBalance (nodeCard: Array[Int]): Array[Array[Int]] = nodeCard.map(v => Array.fill[Int](maxCardSymb - v)(0))    //Array.fill[Array[Int]](wordLength)(Array.fill[Int](maxCardSymb)(0))
 
-  def normalize(ts: Array[Float]) : Array[Float] = {
+  def stats(ts: Array[Float]) : (Float, Float) = {
     val mean = ts.sum / ts.length
     val stdev = sqrt( ts.map(x => x * x).sum / ts.length - mean * mean ).toFloat
-    ts.map( x => (x - mean) / stdev )
+
+    (mean, stdev)
   }
 
-  def tsToPAAandSAX(ts: Array[Float]) : (Array[Float], Array[Int]) = {
+  def normalize(tsWithStats: TSWithStats) : Array[Float] =
+    tsWithStats._1.map( x => (x - tsWithStats._2._1) / tsWithStats._2._2 )
+
+  def tsToPAAandSAX(tsWithStats: TSWithStats) : (Array[Float], Array[Int]) = {
     // ts must be normalized
+    val ts = normalize(tsWithStats)
     val segmentSize = ts.length / wordLength
     val numExtraSegments = ts.length % wordLength
     val sliceBorder = (wordLength - numExtraSegments) * segmentSize
@@ -62,7 +69,7 @@ case class AppConfig (config: Config) {
     (paa, sax)
   }
 
-  def tsToSAX(ts: Array[Float]) : Array[Int] = tsToPAAandSAX(ts)._2
+  def tsToSAX(tsWithStats: TSWithStats) : Array[Int] = tsToPAAandSAX(tsWithStats)._2
 
   def mindist(paa: Array[Float], wordToCard: Array[Int], card: Array[Int], tsLength: Int) : Float = {
     val saxBounds = (wordToCard.iterator zip card.iterator).map{ case(w, c) => ( (w << (maxCardSymb - c)) - 1, ((w + 1) << (maxCardSymb - c)) - 1 )}
@@ -77,7 +84,7 @@ case class AppConfig (config: Config) {
     sqrt(symDistSq.sum / wordLength * tsLength).toFloat
   }
 
-  def distance(xs: Array[Float], ys: Array[Float]) : Float =
-    sqrt((xs zip ys).map { case (x,y) => pow(y-x, 2)}.sum).toFloat
+  def distance(xs: TSWithStats, ys: TSWithStats) : Float =
+    sqrt((xs._1 zip ys._1).map { case (x, y) => pow((y - ys._2._1)/ys._2._2 - (x - xs._2._1)/xs._2._2, 2)}.sum).toFloat
 
 }

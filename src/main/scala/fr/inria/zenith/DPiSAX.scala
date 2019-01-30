@@ -20,11 +20,10 @@ import scala.io.Source
 object DPiSAX  {
 
   type CombineData = (Array[Float], Array[(Int, Array[Float], Float)])
-  type CombineDataPAA = (Array[Float], Array[Float], Array[(Int, Array[Float], Float)])
+  type CombineDataPAA = (Array[Float], (Array[Float], (Float, Float)), Array[(Int, Array[Float], Float)])
 
-  type DataRDD = RDD[(Int, Array[Float])]
-  type DataStatsRDD = RDD[(Int, (Array[Float], Float, Float))]
-  type ApproxRDD = RDD[(Int, Array[Float], Array[Float], Array[(Int, Array[Float], Float)])]
+  type DataStatsRDD = RDD[(Int, (Array[Float], (Float, Float)))]
+  type ApproxRDD = RDD[(Int, Array[Float], (Array[Float], (Float, Float)), Array[(Int, Array[Float], Float)])]
   type OutputRDD = RDD[(Int, Array[Float], Array[(Int, Array[Float], Float)])]
 
   type PartTableBC = Broadcast[Array[((String, Array[Int]), Int)]]
@@ -34,7 +33,7 @@ object DPiSAX  {
 //  def zeroArray =  Array.fill[Int](config.wordLength)(0)
 
 
-  private def readRDD(sc: SparkContext, tsFile: String) = {
+  private def readRDD(sc: SparkContext, tsFile: String) : DataStatsRDD = {
    // val tsFilePath = config.tsFilePath
     val numPart = config.numPart
     val firstCol = config.firstCol
@@ -46,8 +45,7 @@ object DPiSAX  {
       if (numPart == 0) sc.objectFile[(Int, (Array[Float]))](tsFile)
       else sc.objectFile[(Int, (Array[Float]))](tsFile, numPart)
 
-    distFile.map(ts => (ts._1, config.normalize(ts._2)))
-    // TODO: work on data with stats instead of normalized data
+    distFile.map( ts => (ts._1, (ts._2, config.stats(ts._2))) )
   }
 
   private def outputRDD(label: String, rdd: OutputRDD) : Unit = {
@@ -65,7 +63,7 @@ object DPiSAX  {
   }
 
 
-  private def tsToSAX(ts: RDD[(Int, Array[Float])]): RDD[(Array[Int],Int)] = ts.map(t => (config.tsToSAX(t._2), t._1))
+  private def tsToSAX(ts: DataStatsRDD): RDD[(Array[Int], Int)] = ts.map(t => (config.tsToSAX(t._2), t._1))
 
   private def partTreeSplit (tree: SaxNode) : Unit = {
     val partTable = tree.partTable.toList
@@ -73,9 +71,9 @@ object DPiSAX  {
     tree.partTreeSplit(partNode)
   }
 
-  private def linearSearch(inputRDD: DataRDD, queryRDD: DataRDD) = {
+  private def linearSearch(inputRDD: DataStatsRDD, queryRDD: DataStatsRDD) : OutputRDD = {
 
-    val plsRDD = (queryRDD cartesian inputRDD).map{ case ((q_id, q_data), (t_id, t_data)) => (q_id, (q_data, t_id, t_data, config.distance(q_data, t_data))) }
+    val plsRDD = (queryRDD cartesian inputRDD).map{ case ((q_id, q_data), (t_id, t_data)) => (q_id, (q_data._1, t_id, t_data._1, config.distance(q_data, t_data))) }
       .combineByKey(v => (v._1, Array((v._2, v._3, v._4)))
         , (xs: CombineData, v) => (xs._1, xs._2 :+ (v._2, v._3, v._4))
         , (xs: CombineData, ys: CombineData) => (xs._1, xs._2 ++ ys._2))
@@ -106,7 +104,7 @@ object DPiSAX  {
     }
   }
 
-  private def createPartTable(inputRDD: DataRDD) = {
+  private def createPartTable(inputRDD: DataStatsRDD) = {
 
     /** Sampling **/
     val tsSample = inputRDD.sample(false,config.sampleSize)
@@ -141,7 +139,7 @@ object DPiSAX  {
     partTable.find(v => v._1._1 == nodeID(tsWord, v._1._2)).map(_._2).getOrElse(-1)
   }
 
-  private def buildIndex(partRDD: PartTableBC, inputRDD: DataRDD) : Unit = {
+  private def buildIndex(partRDD: PartTableBC, inputRDD: DataStatsRDD) : Unit = {
     val inputSAX = tsToSAX(inputRDD)
     val inputSAXpart = inputSAX.map{case (saxWord, tsId) => (getPartID(saxWord, partRDD.value), (saxWord, tsId))}
 
@@ -161,7 +159,7 @@ object DPiSAX  {
 
   }
 
-  private def approximateQuery(partRDD: PartTableBC, inputRDD: DataRDD, queryRDD: DataRDD) : ApproxRDD = {
+  private def approximateQuery(partRDD: PartTableBC, inputRDD: DataStatsRDD, queryRDD: DataStatsRDD) : ApproxRDD = {
 
     val querySAX = queryRDD.map( t => ( t._1, (t._2, config.tsToPAAandSAX(t._2)) ) )
 
@@ -194,7 +192,7 @@ object DPiSAX  {
 
     val approxRDD = results.flatMap{ case (qid, qw, tslist, paa, data) => tslist.map( t => (t._2, (qid, paa, data)) ) }
       .join(inputRDD)
-      .map{case(tsid, ((qid, qpaa, qdata), tsdata)) => (qid, (qpaa, qdata, tsid, tsdata, config.distance(qdata, tsdata)))}
+      .map{case(tsid, ((q_id, q_paa, q_data), t_data)) => (q_id, (q_paa, q_data, tsid, t_data._1, config.distance(q_data, t_data)))}
       .combineByKey(v => (v._1, v._2, Array((v._3, v._4, v._5)))
         , (xs: CombineDataPAA, v) => (xs._1, xs._2, xs._3 :+ (v._3, v._4, v._5))
         , (xs: CombineDataPAA, ys: CombineDataPAA) => (xs._1, xs._2, xs._3 ++ ys._3))
@@ -203,9 +201,9 @@ object DPiSAX  {
     approxRDD
   }
 
-  private def exactQuery(partRDD: PartTableBC, inputRDD: DataRDD, approxRDD: ApproxRDD, sc: SparkContext) : OutputRDD = {
+  private def exactQuery(partRDD: PartTableBC, inputRDD: DataStatsRDD, approxRDD: ApproxRDD, partIndexRDD: RDD[Int]) : OutputRDD = {
 
-    val queryExact = sc.parallelize(0 until config.numPart) cartesian approxRDD.filter(_._3.length > 0).map{ case (qid, q_paa, qdata, res) => (qid, q_paa, res.last._3, qdata) }
+    val queryExact = partIndexRDD cartesian approxRDD.filter(_._4.length > 0).map{ case (q_id, q_paa, q_data, res) => (q_id, q_paa, res.last._3, q_data) }
     // TODO: switch to full search when approx gives no result
     // TODO: run boundedSearch on batches of queries
 
@@ -216,7 +214,7 @@ object DPiSAX  {
         val json: JsValue = Json.parse(jsString)
         val root = deserJsValue("", json)
 
-        val tsLength = first._2._4.length
+        val tsLength = first._2._4._1.length
 
         // get result with centralized approximate search
         var result = Iterator((first._2._1, root.boundedSearch(first._2._2, first._2._3, tsLength), first._2._4)) // to query first
@@ -226,9 +224,11 @@ object DPiSAX  {
       else Iterator()
     }
 
+    // TODO: compare performance with (resultsExact join querySAX join inputRDD)
+
     val exactRDD = resultsExact.flatMap{ case(qid, tslist, qdata) => tslist.map( t => (t._2, (qid, qdata)) )}
       .join(inputRDD)
-      .map{ case(t_id, ((q_id, q_data), t_data)) => (q_id, (q_data, t_id, t_data, config.distance(q_data, t_data))) }
+      .map{ case(t_id, ((q_id, q_data), t_data)) => (q_id, (q_data._1, t_id, t_data._1, config.distance(q_data, t_data))) }
       .combineByKey(v => (v._1, Array((v._2, v._3, v._4)))
         , (xs: CombineData, v) => (xs._1, xs._2 :+ (v._2, v._3, v._4))
         , (xs: CombineData, ys: CombineData) => (xs._1, xs._2 ++ ys._2))
@@ -286,14 +286,14 @@ object DPiSAX  {
 
     approxRDD.cache()
 
-    outputRDD( "Approximate", approxRDD.map{ case (q_id, q_paa, qdata, res) => (q_id, qdata, res) } )
+    outputRDD( "Approximate", approxRDD.map{ case (q_id, q_paa, q_data, res) => (q_id, q_data._1, res) } )
 
 
     /*********************************/
     /**  Exact Search               **/
     /*********************************/
 
-    val exactRDD = exactQuery(partRDD, inputRDD, approxRDD, sc)
+    val exactRDD = exactQuery(partRDD, inputRDD, approxRDD, sc.parallelize(0 until config.numPart))
     outputRDD("Exact", exactRDD)
 
   }

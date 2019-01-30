@@ -9,22 +9,22 @@ import org.apache.commons.math3.distribution.NormalDistribution
   */
 case class AppConfig (config: Config) {
 
-  val workDir =  "/Users/leva/Documents/dpisax_res/"
+  val workDir =  config.getString("workDir")
 
   val maxCardSymb = config.getInt("maxCardSymb")
   val wordLength: Integer = config.getInt("wordLength")
   val threshold = config.getInt("threshold")
+  val topk = config.getInt("topk")
 
-  val topk = 10
   val tsFilePath = config.getString("tsFilePath")
+  val queryFilePath = config.getString("queryFilePath")
   val firstCol = config.getInt("firstCol")
+
   val numPart = config.getInt("numPart") //TODO parameter = number of workers/cores
  // val executors = sc.getExecutorMemoryStatus.size
  // val coresPerEx = sc.getConf.getInt("spark.executor.cores", 8)
 
   val sampleSize = config.getDouble("sampleSize")
-
-  val queryFilePath = config.getString("queryFilePath")
 
 //  val someOtherSetting = config.getString("some_other_setting")
 

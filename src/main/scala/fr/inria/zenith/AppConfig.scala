@@ -1,17 +1,18 @@
 package fr.inria.zenith
 
 import com.typesafe.config.Config
-import scala.math._
 import org.apache.commons.math3.distribution.NormalDistribution
+
+import scala.math._
 
 /**
   * Created by leva on 23/07/2018.
   */
 case class AppConfig (config: Config) {
 
+
   type TSWithStats = (Array[Float], (Float, Float))
 
-  val workDir =  config.getString("workDir")
 
   val maxCardSymb = config.getInt("maxCardSymb")
   val wordLength: Integer = config.getInt("wordLength")
@@ -22,9 +23,11 @@ case class AppConfig (config: Config) {
   val queryFilePath = config.getString("queryFilePath")
   val firstCol = config.getInt("firstCol")
 
+  val workDir =  config.getString("workDir") //TODO create tsFilePath+wordLength+maxCardSymb  //TODO decide where to save fs: or hdfs:
+  // val workDir = "/tmp/dpisax_res"
+
+
   val numPart = config.getInt("numPart") // TODO parameter = number of workers/cores
- // val executors = sc.getExecutorMemoryStatus.size
- // val coresPerEx = sc.getConf.getInt("spark.executor.cores", 8)
 
   val sampleSize = config.getDouble("sampleSize")
 
@@ -86,5 +89,7 @@ case class AppConfig (config: Config) {
 
   def distance(xs: TSWithStats, ys: TSWithStats) : Float =
     sqrt((xs._1 zip ys._1).map { case (x, y) => pow((y - ys._2._1)/ys._2._2 - (x - xs._2._1)/xs._2._2, 2)}.sum).toFloat
+
+
 
 }

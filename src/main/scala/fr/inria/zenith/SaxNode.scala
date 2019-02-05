@@ -17,7 +17,7 @@ abstract class SaxNode {
 
   def fullSearch : Array[(Array[Int],Int)]
 
-  def toJSON : String
+  def toJSON (fsURI: String) : String
 
   def partTreeSplit (node: String) : Unit
 

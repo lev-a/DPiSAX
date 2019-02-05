@@ -1,7 +1,5 @@
 package fr.inria.zenith
 
-import java.io.PrintWriter
-
 import com.typesafe.config.ConfigFactory
 
 import scala.collection.mutable
@@ -64,8 +62,8 @@ class TerminalNode (var tsIDs: Array[(Array[Int],Int)], nodeCard: Array[Int], va
     newInternalNode
   }
 
-  override def toJSON : String = {
-    tsToFile //TODO where should be this call ?
+  override def toJSON (fsURI: String) : String = {
+    tsToFile(fsURI) //TODO where should be this call ?
 
   //  tsIDs.map(v =>(v._1.mkString("<",".",">"), v._2)).sortBy(_._2).take(5).foreach(println)
     "{\"_CARD_\" :" + nodeCard.mkString("\"", ",", "\"") + ", " + "\"_FILE_\" :" + "\"" + nodeID + "\"" + ", \"_NUM_\":" + tsIDs.length + "}"
@@ -86,7 +84,14 @@ class TerminalNode (var tsIDs: Array[(Array[Int],Int)], nodeCard: Array[Int], va
 
   override def partTable  : Array[ (String,Array[Int],Int)] = Array((nodeID, nodeCard,  tsIDs.length))
 
-  def tsToFile = new PrintWriter(config.workDir + nodeID) { tsIDs.foreach(t => write (t._1.mkString(",") + " " + t._2 + "\n") ); close } //TODO path to working dir   //TODO save raw data
+ // def tsToFile = new PrintWriter(new File(config.workDir + nodeID)) { tsIDs.foreach(t => write (t._1.mkString(",") + " " + t._2 + "\n") ); close } //TODO path to working dir   //TODO save raw data
+ def tsToFile (fsURI: String) =  {
+
+   val writer = DPiSAX.setWriter(fsURI, config.workDir + nodeID)
+     tsIDs.foreach(t => writer.write (t._1.mkString(",") + " " + t._2 + "\n") )
+     writer.close
+ } //TODO close fs ????
+
 
 }
 

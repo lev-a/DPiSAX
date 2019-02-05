@@ -40,7 +40,7 @@ class InternalNode (nodeCard /* card */: Array[Int], childHash: mutable.HashMap[
 
   override def split () : InternalNode  = this
 
-  override def toJSON : String =  "{\"_CARD_\" :" + nodeCard.mkString("\"",",","\"") + ", " + childHash.map(child => child._1.mkString("\"","","\"") + ":" + child._2.toJSON ).mkString(",") + "}"
+  override def toJSON (fsURI: String) : String =  "{\"_CARD_\" :" + nodeCard.mkString("\"",",","\"") + ", " + childHash.map(child => child._1.mkString("\"","","\"") + ":" + child._2.toJSON(fsURI) ).mkString(",") + "}"
 
   override def approximateSearch(saxWord: Array[Int]) : Array[(Array[Int],Int)]  = {
 

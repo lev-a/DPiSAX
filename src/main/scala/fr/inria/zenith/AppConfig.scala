@@ -14,26 +14,24 @@ case class AppConfig (config: Config) {
   type TSWithStats = (Array[Float], (Float, Float))
 
 
-  val maxCardSymb = config.getInt("maxCardSymb")
-  val wordLength: Integer = config.getInt("wordLength")
-  val threshold = config.getInt("threshold")
-  val topk = config.getInt("topk")
+  val maxCardSymb : Integer = config.getInt("maxCardSymb")
+  val wordLength : Integer = config.getInt("wordLength")
+  val threshold : Integer = config.getInt("threshold")
+  val topk : Integer = config.getInt("topk")
 
-  val tsFilePath = config.getString("tsFilePath")
-  val queryFilePath = config.getString("queryFilePath")
-  val firstCol = config.getInt("firstCol")
+  val tsFilePath : String = config.getString("tsFilePath")
+  val queryFilePath : String = config.getString("queryFilePath")
+  val firstCol : Integer = config.getInt("firstCol")
 
-  val workDir =  config.getString("workDir") //TODO create tsFilePath+wordLength+maxCardSymb  //TODO decide where to save fs: or hdfs:
-  // val workDir = "/tmp/dpisax_res"
+  val saveDir : String =  config.getString("saveDir") //TODO => saveDir ???
+  val workDir : String = saveDir + tsFilePath + "_" + wordLength +  "_" + maxCardSymb + "/" //TODO => if tsFilePath is a full path /dir/dir/file
 
 
-  val numPart = config.getInt("numPart") // TODO parameter = number of workers/cores
+  val numPart : Integer = config.getInt("numPart")
 
-  val sampleSize = config.getDouble("sampleSize")
+  val sampleSize : Double= config.getDouble("sampleSize")
 
-//  val someOtherSetting = config.getString("some_other_setting")
-
-  val breakpoints = initBreakpoints()
+  val breakpoints : Array[Double] = initBreakpoints()
 
   private def initBreakpoints() : Array[Double] = {
     val nd = new NormalDistribution(0, 1)
@@ -41,13 +39,13 @@ case class AppConfig (config: Config) {
     (1 until mc).map( x => nd.inverseCumulativeProbability(x.toDouble / mc) ).toArray
   }
 
-  def basicCard = Array.fill[Int](wordLength)(1)
+  def basicCard : Array[Int] = Array.fill[Int](wordLength)(1)
 
-  def zeroArray =  Array.fill[Int](wordLength)(0)
+  def zeroArray : Array[Int] =  Array.fill[Int](wordLength)(0)
 
   def nodeID(wordToCard: Array[Int], nodeCard: Array[Int]) : String  = (wordToCard zip nodeCard).map{case (w,c) => s"$w.$c"}.mkString("_")
 
-  def basicSplitBalance (nodeCard: Array[Int]): Array[Array[Int]] = nodeCard.map(v => Array.fill[Int](maxCardSymb - v)(0))    //Array.fill[Array[Int]](wordLength)(Array.fill[Int](maxCardSymb)(0))
+  def basicSplitBalance (nodeCard: Array[Int]): Array[Array[Int]] = nodeCard.map(v => Array.fill[Int](maxCardSymb - v)(0))
 
   def stats(ts: Array[Float]) : (Float, Float) = {
     val mean = ts.sum / ts.length

@@ -101,15 +101,15 @@ object DPiSAX  {
   }
 
   private def createPartTable(inputRDD: DataStatsRDD) = {
-    //TODO check if partTable already exists for the given input, and skip building table, just read from file
-    //TODO createPT and getPT
+
+    val fscopy = fsURI
 
     /** Sampling **/
     val tsSample = inputRDD.sample(false,config.sampleSize)
     val sampleToSAX = tsToSAX(tsSample)
 
     println("numPart =  " + numPart)
-    var partTree = new TerminalNode(Array.empty, config.zeroArray, config.basicSplitBalance(config.zeroArray), config.zeroArray )
+    val partTree = new TerminalNode(Array.empty, config.zeroArray, config.basicSplitBalance(config.zeroArray), config.zeroArray )
     sampleToSAX.collect.foreach{case (saxWord, tsId) => partTree.insert(saxWord, tsId)}
     val partTreeRoot  = partTree.split()
 
@@ -117,14 +117,32 @@ object DPiSAX  {
 
     /** Partitioning TAble **/
     val partTable = partTreeRoot.partTable
-    val partTreeJsonString = partTreeRoot.toJSON(fsURI) //TODO save to file
+    /** saves partTable to file 'workDir/partTable **/
+    var writer = setWriter(fscopy, config.workDir + "partTable")
+      partTable.foreach{case (nodeID, nodeCard, tsNum) => writer.write (nodeID + " " + nodeCard.mkString(",") + " " + tsNum + "\n") }
+      writer.close
+
+   // val partTreeJsonString = partTreeRoot.toJSON(fsURI)
+    /** saves partTree to file 'workDir/partTree' **/
+    writer = setWriter(fscopy, config.workDir + "partTree.json")
+      writer.write(partTreeRoot.toJSON(fscopy)); writer.close
    // println ("partTreeJsonString = " + partTreeJsonString)
-     partTable.map(v => (v._1, v._2.mkString("{",",","}"), v._3)).foreach(println)
+    println("partTable:" ) ;partTable.map(v => (v._1, v._2.mkString("{",",","}"), v._3)).foreach(println)
 
-    /** Parsing partitioning tree from JSON **/
-    val json: JsValue = Json.parse(partTreeJsonString) //TODO parameter
-    val partTreeDeser = deserJsValue("",json,fsURI)
+    partTable
+  }
 
+  private def readPartTable()  = {
+    /** reads partTable ( Array[ (String,Array[Int],Int)]) from file  'workDir/partTable' **/
+    val fscopy = fsURI
+    val partFromFile = setReader(fscopy, config.workDir + "partTable")
+    val partTable = partFromFile.map(_.split(" ")).map{part => (part(0), part(1).split(",").map(_.toInt).toArray, part(2).toInt)}.toArray
+    println("partTable from file:" ); partTable.map(v => (v._1, v._2.mkString("{",",","}"), v._3)).foreach(println)
+
+    /** [Optional] Parsing partitioning tree from JSON **/
+    val partTreeJsonString = setReader(fscopy,config.workDir + "partTree.json").mkString
+    val json: JsValue = Json.parse(partTreeJsonString)
+    val partTreeDeser = deserJsValue("",json,fscopy)
     // println("partTreeDeser =" + partTreeDeser.toJSON)
 
     partTable
@@ -148,7 +166,6 @@ object DPiSAX  {
       //new PrintWriter(new File (config.workDir + partRDD.value(first._1)._1._1 + ".json"))
       val writer = setWriter(fscopy, config.workDir + partRDD.value(first._1)._1._1 + ".json")
       writer.write(root.toJSON(fscopy)); writer.close
-      //Iterator(root.toJSON)
     }
   }
 
@@ -168,7 +185,7 @@ object DPiSAX  {
         val root = deserJsValue("", json, fscopy)
 
         // get result with centralized approximate search
-        var result = Iterator((first._2._2, first._2._1, root.approximateSearch(first._2._1), first._2._3, first._2._4)) // to query first
+        var result = Iterator((first._2._2, first._2._1, root.approximateSearch(first._2._1), first._2._3, first._2._4))
         result ++= part.map { case (partID, (saxWord, queryId, paa, data)) => (queryId, saxWord, root.approximateSearch(saxWord), paa, data) }
         //  result.map { case (qid, qw, tslist) => (qid, qw.mkString("<", ",", ">"), tslist.map { case (tsw, tsid) => (tsw.mkString("<", ",", ">"), tsid) }.mkString) }.foreach(println(_))
         result
@@ -228,19 +245,21 @@ object DPiSAX  {
 
     exactRDD
   }
-
-  def setWriter(fsURI: String, path: String) : PrintWriter = {   //TODO move to Object Utils
+  def getFS (fsURI: String) = {   //TODO => move to Object Utils
     val conf = new Configuration()
     conf.set("fs.defaultFS", fsURI)
-    val fs = FileSystem.get(conf)
+    FileSystem.get(conf)
+  }
+
+  def setWriter(fsURI: String, path: String) : PrintWriter = {   //TODO => move to Object Utils
+
+    val fs = getFS(fsURI)
     val output = fs.create(new Path(path))
     new PrintWriter(output)
   }
 
-  def setReader(fsURI: String, path: String) : Array[String]  = {  //TODO move to Object Utils
-    val conf = new Configuration()
-    conf.set("fs.defaultFS", fsURI)
-    val fs = FileSystem.get(conf)
+  def setReader(fsURI: String, path: String) : Array[String]  = {  //TODO => move to Object Utils
+    val fs = getFS(fsURI)
     val input = new Path(path)
     fs.exists(input) match {
       //case true => sc.textFile(path).collect
@@ -293,21 +312,27 @@ object DPiSAX  {
     /*********************************/
 
     /** Building partitioning tree  **/
-  //  val numPart = config.numPart
 
-    val partTable = createPartTable(inputRDD)
-    val partRDD : PartTableBC = sc.broadcast(partTable.map(col => (col._1, col._2)).zipWithIndex)
+  // check if partTable already exists for the given input, and skip building table, just read from file
+    val fs = getFS(fsURI)
+    val partTable =  fs.exists( new Path(config.workDir)) match {
+      case true => readPartTable()
+      case false => createPartTable(inputRDD)
+    }
+
+
+//   val partTable = createPartTable(inputRDD)
+    val partRDD : PartTableBC = sc.broadcast(partTable.map(col => (col._1, col._2)).zipWithIndex) //TODO => partTable separate for  indexing and querying ???
 
     /** Partitioning of input dataset **/
 
-    buildIndex(partRDD, inputRDD)
+    buildIndex(partRDD, inputRDD) //TODO => to measure exec time
 
 
     /*********************************/
     /**  Distributed   Query       **/
     /*********************************/
 
-    // TODO read partTreeJsonString from file (to create partRDD)
 
     val approxRDD = approximateQuery(partRDD, inputRDD, queryRDD)
 

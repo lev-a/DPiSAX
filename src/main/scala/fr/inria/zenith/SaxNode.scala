@@ -5,17 +5,17 @@ package fr.inria.zenith
   */
 abstract class SaxNode {
 
-  def insert(saxWord: Array[Int] , tsId: Int )
+  def insert(saxWord: Array[Int] , tsId: Long )
 
   def shallSplit : Boolean
 
   def split () : SaxNode
 
-  def approximateSearch(saxWord: Array[Int]) : Array[(Array[Int],Int)]
+  def approximateSearch(saxWord: Array[Int]) : Array[(Array[Int], Long)]
 
-  def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int) : Array[(Array[Int],Int)]
+  def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int) : Array[(Array[Int], Long)]
 
-  def fullSearch : Array[(Array[Int],Int)]
+  def fullSearch : Array[(Array[Int],Long)]
 
   def toJSON (fsURI: String) : String
 

@@ -13,7 +13,7 @@ class InternalNode (nodeCard: Array[Int], childHash: mutable.HashMap[String /* w
 
   private def wordToCard (saxWord: Array[Int]) = (saxWord zip nodeCard).map { case (w, c) => w >> (config.maxCardSymb - c) }
 
-  override def insert(saxWord: Array[Int] , tsId: Int ): Unit  = {
+  override def insert(saxWord: Array[Int] , tsId: Long ): Unit  = {
     val nodeID : String  = (wordToCard(saxWord) zip nodeCard).map{case (w,c) => s"$w.$c"}.mkString("_")
 
     if (childHash.contains(nodeID)){
@@ -37,7 +37,7 @@ class InternalNode (nodeCard: Array[Int], childHash: mutable.HashMap[String /* w
 
   override def toJSON (fsURI: String) : String =  "{\"_CARD_\" :" + nodeCard.mkString("\"",",","\"") + ", " + childHash.map(child => child._1.mkString("\"","","\"") + ":" + child._2.toJSON(fsURI) ).mkString(",") + "}"
 
-  override def approximateSearch(saxWord: Array[Int]) : Array[(Array[Int],Int)]  = {
+  override def approximateSearch(saxWord: Array[Int]) : Array[(Array[Int], Long)]  = {
     val nodeID : String  = (wordToCard(saxWord) zip nodeCard).map{case (w,c) => s"$w.$c"}.mkString("_")
 
     if (childHash.contains(nodeID)) {
@@ -49,10 +49,10 @@ class InternalNode (nodeCard: Array[Int], childHash: mutable.HashMap[String /* w
     else Array.empty
 }
 
-  override def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int): Array[(Array[Int], Int)] =
+  override def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int): Array[(Array[Int], Long)] =
     childHash.map( _._2.boundedSearch(paa, bound, tsLength) ).reduce(_++_)
 
-  def fullSearch : Array[(Array[Int],Int)] = childHash.flatMap(_._2.fullSearch).toArray
+  def fullSearch : Array[(Array[Int],Long)] = childHash.flatMap(_._2.fullSearch).toArray
 
   def partTreeSplit (nodeToSplitID: String) : Unit = {
 

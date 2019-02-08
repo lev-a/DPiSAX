@@ -16,12 +16,12 @@ import scala.collection.mutable
 
 object DPiSAX  {
 
-  type CombineData = (Array[Float], Array[(Int, Array[Float], Float)])
-  type CombineDataPAA = (Array[Float], (Array[Float], (Float, Float)), Array[(Int, Array[Float], Float)])
+  type CombineData = (Array[Float], Array[(Long, Array[Float], Float)])
+  type CombineDataPAA = (Array[Float], (Array[Float], (Float, Float)), Array[(Long, Array[Float], Float)])
 
-  type DataStatsRDD = RDD[(Int, (Array[Float], (Float, Float)))]
-  type ApproxRDD = RDD[(Int, Array[Float], (Array[Float], (Float, Float)), Array[(Int, Array[Float], Float)])]
-  type OutputRDD = RDD[(Int, Array[Float], Array[(Int, Array[Float], Float)])]
+  type DataStatsRDD = RDD[(Long, (Array[Float], (Float, Float)))]
+  type ApproxRDD = RDD[(Long, Array[Float], (Array[Float], (Float, Float)), Array[(Long, Array[Float], Float)])]
+  type OutputRDD = RDD[(Long, Array[Float], Array[(Long, Array[Float], Float)])]
 
   type PartTableBC = Broadcast[Array[((String, Array[Int]), Int)]]
 
@@ -32,21 +32,20 @@ object DPiSAX  {
 
   private def readRDD(sc: SparkContext, tsFile: String) : DataStatsRDD = {
 
-  //  val numPart = config.numPart
     val firstCol = config.firstCol
 
     val distFile = if ( Array("txt", "csv").contains(tsFile.slice(tsFile.length - 3, tsFile.length)) )
       (if (numPart == 0) sc.textFile(tsFile) else sc.textFile(tsFile, numPart))
-        .map( _.split(',') ).map( t => (t(0).toInt, t.slice(firstCol, t.length).map(_.toFloat) ) )
+        .map( _.split(',') ).map( t => (t(0).toLong, t.slice(firstCol, t.length).map(_.toFloat) ) )
     else
-      if (numPart == 0) sc.objectFile[(Int, (Array[Float]))](tsFile)
-      else sc.objectFile[(Int, (Array[Float]))](tsFile, numPart)
+      if (numPart == 0) sc.objectFile[(Long, (Array[Float]))](tsFile)
+      else sc.objectFile[(Long, (Array[Float]))](tsFile, numPart)
 
     distFile.map( ts => (ts._1, (ts._2, config.stats(ts._2))) )
   }
 
   private def outputRDD(label: String, rdd: OutputRDD) : Unit = {
-
+    //TODO => save full result of query to file
     val t1 = System.currentTimeMillis()
 
     println(label + ":")
@@ -60,7 +59,7 @@ object DPiSAX  {
   }
 
 
-  private def tsToSAX(ts: DataStatsRDD): RDD[(Array[Int], Int)] = ts.map(t => (config.tsToSAX(t._2), t._1))
+  private def tsToSAX(ts: DataStatsRDD): RDD[(Array[Int], Long)] = ts.map(t => (config.tsToSAX(t._2), t._1))
 
   private def partTreeSplit (tree: SaxNode) : Unit = {
     val partTable = tree.partTable.toList
@@ -82,14 +81,12 @@ object DPiSAX  {
   def deserJsValue(jskey: String, jsval: JsValue, fsURI: String) : SaxNode = {
     val js = jsval.asInstanceOf[JsObject]
     val nodeCard = js.value("_CARD_").as[String].split(",").map(_.toInt)
-   // val fscopy = fsURI
-
 
     if (js.keys.contains("_FILE_")) {
       /** create and return terminal node + read ts_list from file **/
       val filename = config.workDir + js.value("_FILE_").as[String]
       val tsFromFile = setReader(fsURI, filename)
-      val tsIDs = tsFromFile.map(_.split(" ")).map(ts => (ts(0).split(",").map(_.toInt).toArray,ts(1).toInt)).toArray
+      val tsIDs = tsFromFile.map(_.split(" ")).map(ts => (ts(0).split(",").map(_.toInt).toArray,ts(1).toLong)).toArray
       val wordToCard = jskey.split("_").map(_.split("\\.")(0).toInt)
       new TerminalNode(tsIDs, nodeCard, config.basicSplitBalance(nodeCard), wordToCard)
     }
@@ -109,6 +106,7 @@ object DPiSAX  {
     val sampleToSAX = tsToSAX(tsSample)
 
     println("numPart =  " + numPart)
+
     val partTree = new TerminalNode(Array.empty, config.zeroArray, config.basicSplitBalance(config.zeroArray), config.zeroArray )
     sampleToSAX.collect.foreach{case (saxWord, tsId) => partTree.insert(saxWord, tsId)}
     val partTreeRoot  = partTree.split()
@@ -122,11 +120,9 @@ object DPiSAX  {
       partTable.foreach{case (nodeID, nodeCard, tsNum) => writer.write (nodeID + " " + nodeCard.mkString(",") + " " + tsNum + "\n") }
       writer.close
 
-   // val partTreeJsonString = partTreeRoot.toJSON(fsURI)
     /** saves partTree to file 'workDir/partTree' **/
     writer = setWriter(fscopy, config.workDir + "partTree.json")
       writer.write(partTreeRoot.toJSON(fscopy)); writer.close
-   // println ("partTreeJsonString = " + partTreeJsonString)
     println("partTable:" ) ;partTable.map(v => (v._1, v._2.mkString("{",",","}"), v._3)).foreach(println)
 
     partTable
@@ -140,9 +136,11 @@ object DPiSAX  {
     println("partTable from file:" ); partTable.map(v => (v._1, v._2.mkString("{",",","}"), v._3)).foreach(println)
 
     /** [Optional] Parsing partitioning tree from JSON **/
+      /*
     val partTreeJsonString = setReader(fscopy,config.workDir + "partTree.json").mkString
     val json: JsValue = Json.parse(partTreeJsonString)
     val partTreeDeser = deserJsValue("",json,fscopy)
+    */
     // println("partTreeDeser =" + partTreeDeser.toJSON)
 
     partTable
@@ -163,7 +161,6 @@ object DPiSAX  {
       val root = new InternalNode(partRDD.value(first._1)._1._2.map(_+1),mutable.HashMap.empty)
       root.insert(first._2._1, first._2._2)
       part.foreach{case (partID, (saxWord, tsId))  => root.insert(saxWord, tsId)}
-      //new PrintWriter(new File (config.workDir + partRDD.value(first._1)._1._1 + ".json"))
       val writer = setWriter(fscopy, config.workDir + partRDD.value(first._1)._1._1 + ".json")
       writer.write(root.toJSON(fscopy)); writer.close
     }
@@ -178,24 +175,17 @@ object DPiSAX  {
     val results =  querySAXpart.partitionBy(new HashPartitioner(numPart)).mapPartitions { part =>
       if (part.hasNext) {
         val first = part.next()
-        //val jsString = Source.fromFile(config.workDir + partRDD.value(first._1)._1._1 + ".json").mkString
         val jsString = setReader(fscopy, config.workDir + partRDD.value(first._1)._1._1 + ".json").mkString
 
         val json: JsValue = Json.parse(jsString)
         val root = deserJsValue("", json, fscopy)
 
-        // get result with centralized approximate search
         var result = Iterator((first._2._2, first._2._1, root.approximateSearch(first._2._1), first._2._3, first._2._4))
         result ++= part.map { case (partID, (saxWord, queryId, paa, data)) => (queryId, saxWord, root.approximateSearch(saxWord), paa, data) }
-        //  result.map { case (qid, qw, tslist) => (qid, qw.mkString("<", ",", ">"), tslist.map { case (tsw, tsid) => (tsw.mkString("<", ",", ">"), tsid) }.mkString) }.foreach(println(_))
         result
       }
       else Iterator()
     }
-    //  results.collect
-    // results.map { case (qid, qw, tslist) => (qid, qw.mkString("<", ",", ">"), tslist.map { case (tsw, tsid) => (tsw.mkString("<", ",", ">"), tsid) }.mkString) }.foreach(println(_))
-    //  results.collect
-    //     results.map { case (qid, qw, tslist) => (qid,  tslist.map { case (tsw, tsid) =>  tsid }.mkString(","), tslist.length) }.foreach(println(_))
 
     val approxRDD = results.flatMap{ case (qid, qw, tslist, paa, data) => tslist.map( t => (t._2, (qid, paa, data)) ) }
       .join(inputRDD)
@@ -218,15 +208,13 @@ object DPiSAX  {
     val resultsExact = queryExact.partitionBy(new HashPartitioner(numPart)).mapPartitions { part =>
       if (part.hasNext) {
         val first = part.next()
-        //val jsString = Source.fromFile(config.workDir + partRDD.value(first._1)._1._1 + ".json").mkString
         val jsString = setReader(fscopy, config.workDir + partRDD.value(first._1)._1._1 + ".json").mkString
         val json: JsValue = Json.parse(jsString)
         val root = deserJsValue("", json, fscopy)
 
         val tsLength = first._2._4._1.length
 
-        // get result with centralized approximate search
-        var result = Iterator((first._2._1, root.boundedSearch(first._2._2, first._2._3, tsLength), first._2._4)) // to query first
+        var result = Iterator((first._2._1, root.boundedSearch(first._2._2, first._2._3, tsLength), first._2._4))
         result ++= part.map { case (partId, (queryId, queryPAA, queryBound, queryData)) => (queryId, root.boundedSearch(queryPAA, queryBound, tsLength), queryData) }
         result
       }
@@ -313,10 +301,10 @@ object DPiSAX  {
 
     /** Building partitioning tree  **/
 
-  // check if partTable already exists for the given input, and skip building table, just read from file
+  /** checks if partTable already exists for the given input, and skips building table, just reads from file **/
     val fs = getFS(fsURI)
     val partTable =  fs.exists( new Path(config.workDir)) match {
-      case true => readPartTable()
+      case true => readPartTable() //TODO => assume that index already build and skip buildIndex ???
       case false => createPartTable(inputRDD)
     }
 

@@ -7,7 +7,7 @@ import scala.collection.mutable
 /**
   * Created by leva on 20/07/2018.
   */
-class TerminalNode (var tsIDs: Array[(Array[Int],Int)], nodeCard: Array[Int], var splitBalance: Array[Array[Int]], wordToCard: Array[Int]) extends SaxNode {
+class TerminalNode (var tsIDs: Array[(Array[Int],Long)], nodeCard: Array[Int], var splitBalance: Array[Array[Int]], wordToCard: Array[Int]) extends SaxNode {
 
   val config = AppConfig(ConfigFactory.load())
   val nodeID : String = config.nodeID(wordToCard, nodeCard)
@@ -16,7 +16,7 @@ class TerminalNode (var tsIDs: Array[(Array[Int],Int)], nodeCard: Array[Int], va
 
 
 
-  override def insert(saxWord: Array[Int] , tsId: Int): Unit  = {
+  override def insert(saxWord: Array[Int] , tsId: Long): Unit  = {
     val wordToCardNext = (saxWord zip nodeCard).map { case (w, c) => for (i <- c until config.maxCardSymb) yield { (w >> (config.maxCardSymb - i - 1) & 0XFF).toByte}  }
     splitBalance = splitBalance.zip(wordToCardNext).map(v => v._1.zip(v._2).map(v => v._1 + ((v._2 % 2) * 2 - 1)))
     //TODO if the cardinality is already max
@@ -61,27 +61,26 @@ class TerminalNode (var tsIDs: Array[(Array[Int],Int)], nodeCard: Array[Int], va
     "{\"_CARD_\" :" + nodeCard.mkString("\"", ",", "\"") + ", " + "\"_FILE_\" :" + "\"" + nodeID + "\"" + ", \"_NUM_\":" + tsIDs.length + "}"
   }
 
-  override def approximateSearch(saxWord: Array[Int]) : Array[(Array[Int],Int)] = tsIDs
+  override def approximateSearch(saxWord: Array[Int]) : Array[(Array[Int], Long)] = tsIDs
 
-  override def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int): Array[(Array[Int], Int)] = {
+  override def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int): Array[(Array[Int], Long)] = {
     if (config.mindist(paa, wordToCard, nodeCard, tsLength) <= bound)
       tsIDs.filter( t => config.mindist(paa, t._1, Array.fill[Int](config.wordLength)(config.maxCardSymb), tsLength) <= bound )
     else
       Array.empty
   }
 
-  def fullSearch :  Array[(Array[Int],Int)] = tsIDs
+  def fullSearch :  Array[(Array[Int], Long)] = tsIDs
 
   def partTreeSplit (node: String) : Unit  =  if (node == nodeID) this.split()
 
   override def partTable  : Array[ (String,Array[Int],Int)] = Array((nodeID, nodeCard,  tsIDs.length))
 
- // def tsToFile = new PrintWriter(new File(config.workDir + nodeID)) { tsIDs.foreach(t => write (t._1.mkString(",") + " " + t._2 + "\n") ); close } //TODO path to working dir   //TODO save raw data
- def tsToFile (fsURI: String) =  {
+  def tsToFile (fsURI: String) =  {
    val writer = DPiSAX.setWriter(fsURI, config.workDir + nodeID)
      tsIDs.foreach(t => writer.write (t._1.mkString(",") + " " + t._2 + "\n") )
      writer.close
- } //TODO close fs ????
+  } //TODO close fs ????
 
 
 }

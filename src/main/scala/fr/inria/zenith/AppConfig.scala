@@ -29,7 +29,9 @@ case class AppConfig (config: Config) {
 
   val numPart : Integer = config.getInt("numPart")
 
-  val sampleSize : Double= config.getDouble("sampleSize")
+  val sampleSize : Double = config.getDouble("sampleSize")
+
+  val pls : Boolean = config.getBoolean("pls")
 
   val breakpoints : Array[Double] = initBreakpoints()
 

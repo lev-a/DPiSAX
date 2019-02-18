@@ -11,7 +11,9 @@ class TerminalNode (var tsIDs: Array[(Array[Int],Long)], nodeCard: Array[Int], v
 
   val config = AppConfig(ConfigFactory.load())
   val nodeID : String = config.nodeID(wordToCard, nodeCard)
-  def splitCandList : List[(Int,Int)] = splitBalance.map(_.map(math.abs(_)).zipWithIndex.dropWhile(_._1 >= tsIDs.length)).zipWithIndex.filter(_._1.nonEmpty).map(v => (v._1.head, v._2)).filter(v => nodeCard(v._2) < config.maxCardSymb).toList.sortBy(r => r._1._2 * tsIDs.length + r._1._1).map(v => (v._2,v._1._2))
+  var maxCardStep = config.maxCardSymb
+
+  def splitCandList : List[(Int,Int,Int)] = splitBalance.map(_.map(math.abs(_)).zipWithIndex.dropWhile(_._1 >= tsIDs.length)).zipWithIndex.filter(_._1.nonEmpty).map(v => (v._1.head, v._2)).filter(v => nodeCard(v._2) < config.maxCardSymb).toList.sortBy(r => r._1._2 * tsIDs.length + r._1._1).map(v => (v._2,v._1._2,v._1._1)).filter(_._2 < maxCardStep)
   // Array[(elem_to_split_position, cardinality_to_split_on)]
 
 
@@ -74,7 +76,12 @@ class TerminalNode (var tsIDs: Array[(Array[Int],Long)], nodeCard: Array[Int], v
 
   def partTreeSplit (node: String) : Unit  =  if (node == nodeID) this.split()
 
-  override def partTable  : Array[ (String,Array[Int],Int)] = Array((nodeID, nodeCard,  tsIDs.length))
+//  override def partTable  : Array[ (String,Array[Int],Int)] = Array((nodeID, nodeCard,  tsIDs.length ))
+  override def partTable  : Array[ (String,Array[Int],Int)] = {
+    maxCardStep = 1
+    Array((nodeID, nodeCard,  (tsIDs.length - splitCandList.map(_._3).headOption.getOrElse(tsIDs.length))/2))
+  }
+
 
   def tsToFile (fsURI: String) =  {
    val writer = DPiSAX.setWriter(fsURI, config.workDir + nodeID)

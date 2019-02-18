@@ -45,16 +45,26 @@ object DPiSAX  {
   }
 
   private def outputRDD(label: String, rdd: OutputRDD) : Unit = {
-    //TODO => save full result of query to file
+
     val t1 = System.currentTimeMillis()
 
-    println(label + ":")
-    rdd.map{ case (q_id, q_data, res) => "(" + q_id + " " + res.map(r => "(" + r._1 + ", " + r._3 + ")").mkString("<", ",", ">") }
-      .collect()
-      .foreach(println(_))
+ //   println(label + ":")
+
+ //   rdd.map{ case (q_id, q_data, res) => "(" + q_id + " " + res.map(r => "(" + r._1 + ", " + r._3 + ")").mkString("<", ",", ">") }
+ //     .collect()
+ //     .foreach(println(_))
+
+   //val res =   rdd.map{ case (q_id, q_data, res) => "(" + q_id + "," + q_data.mkString("[",",","]") + ")," + res.map(c => "(" + c._1 +  "," + c._2.mkString("[",",","]") + ")," + c._3 ).mkString("(",",",")")}
+    val res =   rdd.map{ case (q_id, q_data, res) =>((q_id, q_data.mkString("[",",","]")),res.map(c => "(" + c._1 +  "," + c._2.mkString("[",",","]") + ")," + c._3 ).mkString("(",",",")"))}
+    .collect
 
     val t2 = System.currentTimeMillis()
-    println("Elapsed time: " + (t2 - t1)  + " ms")
+    val writer = DPiSAX.setWriter("file:///", "/tmp/" + config.workDir + config.queryFilePath + "_" + label + "_" + (t2 - t1) )
+    writer.write(res.map(_.toString).reduce(_ + '\n' + _))
+    writer.write("\n")
+    writer.close
+
+    println(label + ": " + (t2 - t1)  + " ms (" +  (t2- t1)/60000 + " min)")
 
   }
 
@@ -101,6 +111,8 @@ object DPiSAX  {
 
     val fscopy = fsURI
 
+    //val sample = config.sampleSize
+   // val sample = numPart*1000
     /** Sampling **/
     val tsSample = inputRDD.sample(false,config.sampleSize)
     val sampleToSAX = tsToSAX(tsSample)
@@ -111,7 +123,7 @@ object DPiSAX  {
     sampleToSAX.collect.foreach{case (saxWord, tsId) => partTree.insert(saxWord, tsId)}
     val partTreeRoot  = partTree.split()
 
-    0 until numPart-2 foreach { _ =>  partTreeSplit(partTreeRoot) }
+    0 until numPart-2 foreach { _ =>  partTreeSplit(partTreeRoot) } //TODO => if all are 0  -> break
 
     /** Partitioning TAble **/
     val partTable = partTreeRoot.partTable
@@ -198,13 +210,48 @@ object DPiSAX  {
     approxRDD
   }
 
-  private def exactQuery(partRDD: PartTableBC, inputRDD: DataStatsRDD, approxRDD: ApproxRDD, partIndexRDD: RDD[Int]) : OutputRDD = {
+  private def mergeDistances(xs: Array[(Long, Array[Float], Float)], ys: Array[(Long, Array[Float], Float)]) = {
+    var rs = new mutable.ListBuffer[(Long, Array[Float], Float)]()
+    var i = 0
 
+    for (x <- xs) {
+      while (i < ys.length && x._3 > ys(i)._3) {
+        rs += ys(i)
+        i += 1
+      }
+
+      rs += x
+    }
+
+    if (i < ys.length)
+      rs ++= ys.slice(i, ys.length)
+
+    rs.take(config.topk).toArray
+  }
+
+  private def exactQuery(partRDD: PartTableBC, inputRDD: DataStatsRDD, approxRDD: ApproxRDD, sc: SparkContext) : OutputRDD = {
+
+    val fscopy = fsURI
+
+    val partIndexRDD = sc.parallelize(0 until numPart)
     val queryExact = partIndexRDD cartesian approxRDD.filter(_._4.length > 0).map{ case (q_id, q_paa, q_data, res) => (q_id, q_paa, res.last._3, q_data) }
     // TODO: switch to full search when approx gives no result
     // TODO: run boundedSearch on batches of queries
+   // val queryBC = sc.broadcast( approxRDD.map{ case (q_id, q_paa, q_data, res) => (q_id, q_data) }.collectAsMap() )
+    val queryBC = sc.broadcast( approxRDD.map{ case (q_id, q_paa, q_data, res) => (q_id, (q_paa, res.last._3, q_data)) }.collectAsMap() )
+    val partTableRDD = sc.parallelize(partRDD.value.map(v => (v._2,v._1)),numPart)
 
-    val fscopy = fsURI
+    val resultsExact = partTableRDD.flatMap{ case (part_id, (node_id, node_card)) =>
+      val jsString = setReader(fscopy, config.workDir + node_id + ".json").mkString
+      val json: JsValue = Json.parse(jsString)
+      val root = deserJsValue("", json, fscopy)
+
+      queryBC.value.map{ case(q_id, (q_paa, q_bound, q_data)) => (q_id, root.boundedSearch(q_paa, q_bound, q_data._1.length))}
+
+    }
+
+/*
+
     val resultsExact = queryExact.partitionBy(new HashPartitioner(numPart)).mapPartitions { part =>
       if (part.hasNext) {
         val first = part.next()
@@ -220,19 +267,47 @@ object DPiSAX  {
       }
       else Iterator()
     }
+*/
+  //  resultsExact.cache()
+  //  val t1 = System.currentTimeMillis()
+  //  resultsExact.map(r => (r._1, r._2.length)).reduceByKey(_+_).map(r => "(" + r._1 + ", " + r._2 + ")").collect().foreach(println(_))
+  //  val t2 = System.currentTimeMillis()
+  //  println("Exact search candidates: " + (t2 - t1) + " ms")
 
     // TODO: compare performance with (resultsExact join querySAX join inputRDD)
 
+
+
+    val exactRDD = resultsExact.flatMap{ case(qid, tslist) => tslist.map( t => (t._2, qid) )}
+      .combineByKey(v => Array(v), (xs: Array[Long], v) => xs :+ v, (xs: Array[Long], ys: Array[Long]) => xs ++ ys)
+      .join(inputRDD)
+      .mapPartitions{ part =>
+        var queryMap = new mutable.HashMap[Long, Array[(Long, Array[Float], Float)]]()
+        queryBC.value.foreach(q => queryMap += (q._1 -> Array.empty))
+
+        while (part.hasNext) {
+          val (t_id, (q_list, t_data)) = part.next()
+          q_list.foreach( q_id => queryMap(q_id) = mergeDistances(queryMap(q_id), Array((t_id, t_data._1, config.distance(queryBC.value(q_id)._3, t_data)))) )
+        }
+
+        queryMap.toIterator
+      }
+      .reduceByKey(mergeDistances)
+      .map{ case(q_id, res) => (q_id, queryBC.value(q_id)._3._1, res)}
+    /*
+
     val exactRDD = resultsExact.flatMap{ case(qid, tslist, qdata) => tslist.map( t => (t._2, (qid, qdata)) )}
       .join(inputRDD)
-      .map{ case(t_id, ((q_id, q_data), t_data)) => (q_id, (q_data._1, t_id, t_data._1, config.distance(q_data, t_data))) }
+      .map{ case(t_id, ((q_id, q_data), t_data)) => (q_id, (Array.empty[Float], t_id, Array.empty[Float], config.distance(q_data, t_data))) }
       .combineByKey(v => (v._1, Array((v._2, v._3, v._4)))
         , (xs: CombineData, v) => (xs._1, xs._2 :+ (v._2, v._3, v._4))
         , (xs: CombineData, ys: CombineData) => (xs._1, xs._2 ++ ys._2))
       .map{ case(q_id, (q_data, res)) => (q_id, q_data, res.sortBy(_._3).take(config.topk)) }
 
+     */
     exactRDD
   }
+
   def getFS (fsURI: String) = {   //TODO => move to Object Utils
     val conf = new Configuration()
     conf.set("fs.defaultFS", fsURI)
@@ -287,8 +362,10 @@ object DPiSAX  {
     /** Parallel Linear Search      **/
     /*********************************/
 
-    val plsRDD = linearSearch(inputRDD, queryRDD)
-    outputRDD("PLS", plsRDD)
+    if (config.pls) {
+      val plsRDD = linearSearch(inputRDD, queryRDD)
+      outputRDD("PLS", plsRDD)
+    }
 
     numPart = config.numPart==0 match {
       case true  => sc.defaultParallelism//executors * coresPerEx
@@ -300,25 +377,27 @@ object DPiSAX  {
     /*********************************/
 
     /** Building partitioning tree  **/
-
-  /** checks if partTable already exists for the given input, and skips building table, just reads from file **/
+    val start = System.currentTimeMillis()
+    var buildIndexCond = true
+  /** checks if partTable already exists for the given input, and skips building index, just reads table from file **/
     val fs = getFS(fsURI)
+
     val partTable =  fs.exists( new Path(config.workDir)) match {
-      case true => readPartTable() //TODO => assume that index already build and skip buildIndex ???
+      case true =>  buildIndexCond=false; readPartTable()
       case false => createPartTable(inputRDD)
     }
 
-
 //   val partTable = createPartTable(inputRDD)
-    val partRDD : PartTableBC = sc.broadcast(partTable.map(col => (col._1, col._2)).zipWithIndex) //TODO => partTable separate for  indexing and querying ???
+    val partRDD : PartTableBC = sc.broadcast(partTable.map(col => (col._1, col._2)).zipWithIndex)
 
-    /** Partitioning of input dataset **/
 
-    buildIndex(partRDD, inputRDD) //TODO => to measure exec time
+    if (buildIndexCond) buildIndex(partRDD, inputRDD)
 
+    val stop = System.currentTimeMillis()
+    println("Indexing : " + (stop - start) + " ms (" + (stop - start)/60000 + " min)" )
 
     /*********************************/
-    /**  Distributed   Query       **/
+    /**  Approximate Search      **/
     /*********************************/
 
 
@@ -333,7 +412,8 @@ object DPiSAX  {
     /**  Exact Search               **/
     /*********************************/
 
-    val exactRDD = exactQuery(partRDD, inputRDD, approxRDD, sc.parallelize(0 until numPart))
+//    val exactRDD = exactQuery(partRDD, inputRDD, approxRDD, sc.parallelize(0 until numPart))
+    val exactRDD = exactQuery(partRDD, inputRDD, approxRDD, sc)
     outputRDD("Exact", exactRDD)
 
   }

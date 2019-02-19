@@ -1,10 +1,7 @@
 package fr.inria.zenith
 
-import java.io.{BufferedReader, InputStreamReader, PrintWriter}
-
 import com.typesafe.config.ConfigFactory
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.hadoop.fs.Path
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{HashPartitioner, SparkConf, SparkContext}
@@ -59,12 +56,12 @@ object DPiSAX  {
     .collect
 
     val t2 = System.currentTimeMillis()
-    val writer = DPiSAX.setWriter("file:///", "/tmp/" + config.workDir + config.queryFilePath + "_" + label + "_" + (t2 - t1) )
+    val writer = Utils.setWriter("file:///", "/tmp/" + config.workDir + config.queryFilePath + "_" + label + "_" + (t2 - t1) )
     writer.write(res.map(_.toString).reduce(_ + '\n' + _))
     writer.write("\n")
     writer.close
 
-    println(label + ": " + (t2 - t1)  + " ms (" +  (t2- t1)/60000 + " min)")
+    println(label + ": " + (t2 - t1)  + " ms (" +  Utils.getMinSec(t2-t1) + ")")
 
   }
 
@@ -74,7 +71,8 @@ object DPiSAX  {
   private def partTreeSplit (tree: SaxNode) : Unit = {
     val partTable = tree.partTable.toList
     val partNode = partTable.maxBy(_._3)._1
-    tree.partTreeSplit(partNode)
+    if (partNode != null)
+      tree.partTreeSplit(partNode)
   }
 
   private def linearSearch(inputRDD: DataStatsRDD, queryRDD: DataStatsRDD) : OutputRDD = {
@@ -95,7 +93,7 @@ object DPiSAX  {
     if (js.keys.contains("_FILE_")) {
       /** create and return terminal node + read ts_list from file **/
       val filename = config.workDir + js.value("_FILE_").as[String]
-      val tsFromFile = setReader(fsURI, filename)
+      val tsFromFile = Utils.setReader(fsURI, filename)
       val tsIDs = tsFromFile.map(_.split(" ")).map(ts => (ts(0).split(",").map(_.toInt).toArray,ts(1).toLong)).toArray
       val wordToCard = jskey.split("_").map(_.split("\\.")(0).toInt)
       new TerminalNode(tsIDs, nodeCard, config.basicSplitBalance(nodeCard), wordToCard)
@@ -128,12 +126,12 @@ object DPiSAX  {
     /** Partitioning TAble **/
     val partTable = partTreeRoot.partTable
     /** saves partTable to file 'workDir/partTable **/
-    var writer = setWriter(fscopy, config.workDir + "partTable")
+    var writer = Utils.setWriter(fscopy, config.workDir + "partTable")
       partTable.foreach{case (nodeID, nodeCard, tsNum) => writer.write (nodeID + " " + nodeCard.mkString(",") + " " + tsNum + "\n") }
       writer.close
 
     /** saves partTree to file 'workDir/partTree' **/
-    writer = setWriter(fscopy, config.workDir + "partTree.json")
+    writer = Utils.setWriter(fscopy, config.workDir + "partTree.json")
       writer.write(partTreeRoot.toJSON(fscopy)); writer.close
     println("partTable:" ) ;partTable.map(v => (v._1, v._2.mkString("{",",","}"), v._3)).foreach(println)
 
@@ -143,7 +141,7 @@ object DPiSAX  {
   private def readPartTable()  = {
     /** reads partTable ( Array[ (String,Array[Int],Int)]) from file  'workDir/partTable' **/
     val fscopy = fsURI
-    val partFromFile = setReader(fscopy, config.workDir + "partTable")
+    val partFromFile = Utils.setReader(fscopy, config.workDir + "partTable")
     val partTable = partFromFile.map(_.split(" ")).map{part => (part(0), part(1).split(",").map(_.toInt).toArray, part(2).toInt)}.toArray
     println("partTable from file:" ); partTable.map(v => (v._1, v._2.mkString("{",",","}"), v._3)).foreach(println)
 
@@ -173,7 +171,7 @@ object DPiSAX  {
       val root = new InternalNode(partRDD.value(first._1)._1._2.map(_+1),mutable.HashMap.empty)
       root.insert(first._2._1, first._2._2)
       part.foreach{case (partID, (saxWord, tsId))  => root.insert(saxWord, tsId)}
-      val writer = setWriter(fscopy, config.workDir + partRDD.value(first._1)._1._1 + ".json")
+      val writer = Utils.setWriter(fscopy, config.workDir + partRDD.value(first._1)._1._1 + ".json")
       writer.write(root.toJSON(fscopy)); writer.close
     }
   }
@@ -187,7 +185,7 @@ object DPiSAX  {
     val results =  querySAXpart.partitionBy(new HashPartitioner(numPart)).mapPartitions { part =>
       if (part.hasNext) {
         val first = part.next()
-        val jsString = setReader(fscopy, config.workDir + partRDD.value(first._1)._1._1 + ".json").mkString
+        val jsString = Utils.setReader(fscopy, config.workDir + partRDD.value(first._1)._1._1 + ".json").mkString
 
         val json: JsValue = Json.parse(jsString)
         val root = deserJsValue("", json, fscopy)
@@ -242,7 +240,7 @@ object DPiSAX  {
     val partTableRDD = sc.parallelize(partRDD.value.map(v => (v._2,v._1)),numPart)
 
     val resultsExact = partTableRDD.flatMap{ case (part_id, (node_id, node_card)) =>
-      val jsString = setReader(fscopy, config.workDir + node_id + ".json").mkString
+      val jsString = Utils.setReader(fscopy, config.workDir + node_id + ".json").mkString
       val json: JsValue = Json.parse(jsString)
       val root = deserJsValue("", json, fscopy)
 
@@ -308,38 +306,6 @@ object DPiSAX  {
     exactRDD
   }
 
-  def getFS (fsURI: String) = {   //TODO => move to Object Utils
-    val conf = new Configuration()
-    conf.set("fs.defaultFS", fsURI)
-    FileSystem.get(conf)
-  }
-
-  def setWriter(fsURI: String, path: String) : PrintWriter = {   //TODO => move to Object Utils
-
-    val fs = getFS(fsURI)
-    val output = fs.create(new Path(path))
-    new PrintWriter(output)
-  }
-
-  def setReader(fsURI: String, path: String) : Array[String]  = {  //TODO => move to Object Utils
-    val fs = getFS(fsURI)
-    val input = new Path(path)
-    fs.exists(input) match {
-      //case true => sc.textFile(path).collect
-      case true => {
-        val reader = new BufferedReader(new InputStreamReader(fs.open(input)))
-        val lines = scala.collection.mutable.ArrayBuffer[String]()
-        var line = reader.readLine()
-        while (line != null) {
-          lines += line
-          line = reader.readLine()
-        }
-        reader.close; //fs.close
-        lines.toArray
-      }
-      case false => /*fs.close;*/  Array[String]()
-    }
-  }
 
 
   def main(args: Array[String]): Unit = {
@@ -380,7 +346,7 @@ object DPiSAX  {
     val start = System.currentTimeMillis()
     var buildIndexCond = true
   /** checks if partTable already exists for the given input, and skips building index, just reads table from file **/
-    val fs = getFS(fsURI)
+    val fs = Utils.getFS(fsURI)
 
     val partTable =  fs.exists( new Path(config.workDir)) match {
       case true =>  buildIndexCond=false; readPartTable()
@@ -394,7 +360,7 @@ object DPiSAX  {
     if (buildIndexCond) buildIndex(partRDD, inputRDD)
 
     val stop = System.currentTimeMillis()
-    println("Indexing : " + (stop - start) + " ms (" + (stop - start)/60000 + " min)" )
+    println("Indexing : " + (stop - start) + " ms (" +  Utils.getMinSec(stop-start) + ")" )
 
     /*********************************/
     /**  Approximate Search      **/

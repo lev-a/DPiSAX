@@ -84,7 +84,7 @@ class TerminalNode (var tsIDs: Array[(Array[Int],Long)], nodeCard: Array[Int], v
 
 
   def tsToFile (fsURI: String) =  {
-   val writer = DPiSAX.setWriter(fsURI, config.workDir + nodeID)
+   val writer = Utils.setWriter(fsURI, config.workDir + nodeID)
      tsIDs.foreach(t => writer.write (t._1.mkString(",") + " " + t._2 + "\n") )
      writer.close
   } //TODO close fs ????

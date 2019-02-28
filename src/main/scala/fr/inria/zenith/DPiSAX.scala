@@ -56,7 +56,7 @@ object DPiSAX  {
     .collect
 
     val t2 = System.currentTimeMillis()
-    val writer = Utils.setWriter("file:///", "/tmp/" + config.workDir + config.queryFilePath + "_" + label + "_" + (t2 - t1) )
+    val writer = Utils.setWriter("file:///", "/tmp/" + config.workDir + Utils.getFileName(config.queryFilePath) + "_" + label + "_" + (t2 - t1) )
     writer.write(res.map(_.toString).reduce(_ + '\n' + _))
     writer.write("\n")
     writer.close
@@ -65,6 +65,25 @@ object DPiSAX  {
 
   }
 
+
+  private def mergeDistances(xs: Array[(Long, Array[Float], Float)], ys: Array[(Long, Array[Float], Float)]) = {
+    var rs = new mutable.ListBuffer[(Long, Array[Float], Float)]()
+    var i = 0
+
+    for (x <- xs) {
+      while (i < ys.length && x._3 > ys(i)._3) {
+        rs += ys(i)
+        i += 1
+      }
+
+      rs += x
+    }
+
+    if (i < ys.length)
+      rs ++= ys.slice(i, ys.length)
+
+    rs.take(config.topk).toArray
+  }
 
   private def tsToSAX(ts: DataStatsRDD): RDD[(Array[Int], Long)] = ts.map(t => (config.tsToSAX(t._2), t._1))
 
@@ -75,13 +94,23 @@ object DPiSAX  {
       tree.partTreeSplit(partNode)
   }
 
-  private def linearSearch(inputRDD: DataStatsRDD, queryRDD: DataStatsRDD) : OutputRDD = {
+  private def linearSearch(inputRDD: DataStatsRDD, queryRDD: DataStatsRDD, sc: SparkContext) : OutputRDD = {
 
-    val plsRDD = (queryRDD cartesian inputRDD).map{ case ((q_id, q_data), (t_id, t_data)) => (q_id, (q_data._1, t_id, t_data._1, config.distance(q_data, t_data))) }
-      .combineByKey(v => (v._1, Array((v._2, v._3, v._4)))
-        , (xs: CombineData, v) => (xs._1, xs._2 :+ (v._2, v._3, v._4))
-        , (xs: CombineData, ys: CombineData) => (xs._1, xs._2 ++ ys._2))
-      .map{ case(q_id, (q_data, res)) => (q_id, q_data, res.sortBy(_._3).take(config.topk)) }
+    val queryBC = sc.broadcast( queryRDD.collectAsMap() )
+
+    val plsRDD = inputRDD.mapPartitions{ part =>
+        var queryMap = new mutable.HashMap[Long, Array[(Long, Array[Float], Float)]]()
+        queryBC.value.foreach(q => queryMap += (q._1 -> Array.empty))
+
+        while (part.hasNext) {
+          val (t_id, t_data) = part.next()
+          queryBC.value.foreach{ case (q_id, q_data) => queryMap(q_id) = mergeDistances(queryMap(q_id), Array((t_id, t_data._1, config.distance(q_data, t_data)))) }
+        }
+
+        queryMap.toIterator
+      }
+      .reduceByKey(mergeDistances)
+      .map{ case(q_id, res) => (q_id, queryBC.value(q_id)._1, res)}
 
     plsRDD
   }
@@ -208,34 +237,12 @@ object DPiSAX  {
     approxRDD
   }
 
-  private def mergeDistances(xs: Array[(Long, Array[Float], Float)], ys: Array[(Long, Array[Float], Float)]) = {
-    var rs = new mutable.ListBuffer[(Long, Array[Float], Float)]()
-    var i = 0
-
-    for (x <- xs) {
-      while (i < ys.length && x._3 > ys(i)._3) {
-        rs += ys(i)
-        i += 1
-      }
-
-      rs += x
-    }
-
-    if (i < ys.length)
-      rs ++= ys.slice(i, ys.length)
-
-    rs.take(config.topk).toArray
-  }
-
   private def exactQuery(partRDD: PartTableBC, inputRDD: DataStatsRDD, approxRDD: ApproxRDD, sc: SparkContext) : OutputRDD = {
 
     val fscopy = fsURI
 
-    val partIndexRDD = sc.parallelize(0 until numPart)
-    val queryExact = partIndexRDD cartesian approxRDD.filter(_._4.length > 0).map{ case (q_id, q_paa, q_data, res) => (q_id, q_paa, res.last._3, q_data) }
-    // TODO: switch to full search when approx gives no result
-    // TODO: run boundedSearch on batches of queries
-   // val queryBC = sc.broadcast( approxRDD.map{ case (q_id, q_paa, q_data, res) => (q_id, q_data) }.collectAsMap() )
+    // gave up running boundedSearch on batches of queries - not efficient
+
     val queryBC = sc.broadcast( approxRDD.map{ case (q_id, q_paa, q_data, res) => (q_id, (q_paa, res.last._3, q_data)) }.collectAsMap() )
     val partTableRDD = sc.parallelize(partRDD.value.map(v => (v._2,v._1)),numPart)
 
@@ -248,35 +255,8 @@ object DPiSAX  {
 
     }
 
-/*
-
-    val resultsExact = queryExact.partitionBy(new HashPartitioner(numPart)).mapPartitions { part =>
-      if (part.hasNext) {
-        val first = part.next()
-        val jsString = setReader(fscopy, config.workDir + partRDD.value(first._1)._1._1 + ".json").mkString
-        val json: JsValue = Json.parse(jsString)
-        val root = deserJsValue("", json, fscopy)
-
-        val tsLength = first._2._4._1.length
-
-        var result = Iterator((first._2._1, root.boundedSearch(first._2._2, first._2._3, tsLength), first._2._4))
-        result ++= part.map { case (partId, (queryId, queryPAA, queryBound, queryData)) => (queryId, root.boundedSearch(queryPAA, queryBound, tsLength), queryData) }
-        result
-      }
-      else Iterator()
-    }
-*/
-  //  resultsExact.cache()
-  //  val t1 = System.currentTimeMillis()
-  //  resultsExact.map(r => (r._1, r._2.length)).reduceByKey(_+_).map(r => "(" + r._1 + ", " + r._2 + ")").collect().foreach(println(_))
-  //  val t2 = System.currentTimeMillis()
-  //  println("Exact search candidates: " + (t2 - t1) + " ms")
-
-    // TODO: compare performance with (resultsExact join querySAX join inputRDD)
-
-
-
-    val exactRDD = resultsExact.flatMap{ case(qid, tslist) => tslist.map( t => (t._2, qid) )}
+    val exactRDD = resultsExact
+      .flatMap{ case(qid, tslist) => tslist.map( t => (t._2, qid) )}
       .combineByKey(v => Array(v), (xs: Array[Long], v) => xs :+ v, (xs: Array[Long], ys: Array[Long]) => xs ++ ys)
       .join(inputRDD)
       .mapPartitions{ part =>
@@ -292,17 +272,7 @@ object DPiSAX  {
       }
       .reduceByKey(mergeDistances)
       .map{ case(q_id, res) => (q_id, queryBC.value(q_id)._3._1, res)}
-    /*
 
-    val exactRDD = resultsExact.flatMap{ case(qid, tslist, qdata) => tslist.map( t => (t._2, (qid, qdata)) )}
-      .join(inputRDD)
-      .map{ case(t_id, ((q_id, q_data), t_data)) => (q_id, (Array.empty[Float], t_id, Array.empty[Float], config.distance(q_data, t_data))) }
-      .combineByKey(v => (v._1, Array((v._2, v._3, v._4)))
-        , (xs: CombineData, v) => (xs._1, xs._2 :+ (v._2, v._3, v._4))
-        , (xs: CombineData, ys: CombineData) => (xs._1, xs._2 ++ ys._2))
-      .map{ case(q_id, (q_data, res)) => (q_id, q_data, res.sortBy(_._3).take(config.topk)) }
-
-     */
     exactRDD
   }
 
@@ -329,7 +299,7 @@ object DPiSAX  {
     /*********************************/
 
     if (config.pls) {
-      val plsRDD = linearSearch(inputRDD, queryRDD)
+      val plsRDD = linearSearch(inputRDD, queryRDD, sc)
       outputRDD("PLS", plsRDD)
     }
 

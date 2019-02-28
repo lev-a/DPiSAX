@@ -72,6 +72,11 @@ class TerminalNode (var tsIDs: Array[(Array[Int],Long)], nodeCard: Array[Int], v
       Array.empty
   }
 
+  override def boundedSearch(qs: Array[(Long, (Array[Float], Float, Int))]) : Array[(Long, Long)] = {
+    qs.filter{ case(q_id, (q_paa, q_bound, q_length)) => config.mindist(q_paa, wordToCard, nodeCard, q_length) <= q_bound }
+      .flatMap{ case(q_id, (q_paa, q_bound, q_length)) => tsIDs.filter(t => config.mindist(q_paa, t._1, Array.fill[Int](config.wordLength)(config.maxCardSymb), q_length) <= q_bound).map(t => (t._2, q_id))}
+    }
+
   def fullSearch :  Array[(Array[Int], Long)] = tsIDs
 
   def partTreeSplit (node: String) : Unit  =  if (node == nodeID) this.split()

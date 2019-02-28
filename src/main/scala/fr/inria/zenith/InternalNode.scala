@@ -43,6 +43,7 @@ class InternalNode (nodeCard: Array[Int], childHash: mutable.HashMap[String /* w
     if (childHash.contains(nodeID)) {
       childHash(nodeID).approximateSearch(saxWord)
      }
+    // TODO: else use lowest bound child
     else if (childHash.size == 1) {
       childHash.head._2.fullSearch
     }
@@ -51,6 +52,9 @@ class InternalNode (nodeCard: Array[Int], childHash: mutable.HashMap[String /* w
 
   override def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int): Array[(Array[Int], Long)] =
     childHash.map( _._2.boundedSearch(paa, bound, tsLength) ).reduce(_++_)
+
+  override def boundedSearch(qs: Array[(Long, (Array[Float], Float, Int))]) : Array[(Long, Long)] =
+    childHash.map( _._2.boundedSearch(qs) ).reduce(_++_)
 
   def fullSearch : Array[(Array[Int],Long)] = childHash.flatMap(_._2.fullSearch).toArray
 

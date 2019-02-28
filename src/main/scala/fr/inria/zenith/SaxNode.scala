@@ -15,6 +15,8 @@ abstract class SaxNode {
 
   def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int) : Array[(Array[Int], Long)]
 
+  def boundedSearch(qs: Array[(Long, (Array[Float], Float, Int))]) : Array[(Long, Long)]
+
   def fullSearch : Array[(Array[Int],Long)]
 
   def toJSON (fsURI: String) : String

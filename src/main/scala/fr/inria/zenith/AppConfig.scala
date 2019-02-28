@@ -24,7 +24,7 @@ case class AppConfig (config: Config) {
   val firstCol : Integer = config.getInt("firstCol")
 
   val saveDir : String =  config.getString("saveDir") //TODO => saveDir ???
-  val workDir : String = saveDir + tsFilePath + "_" + wordLength +  "_" + maxCardSymb + "/" //TODO => if tsFilePath is a full path /dir/dir/file
+  val workDir : String = saveDir + Utils.getFileName(tsFilePath) + "_" + wordLength +  "_" + maxCardSymb + "/" //TODO => if tsFilePath is a full path /dir/dir/file
 
 
   val numPart : Integer = config.getInt("numPart")
@@ -33,9 +33,8 @@ case class AppConfig (config: Config) {
 
   val pls : Boolean = config.getBoolean("pls")
 
-  val breakpoints : Array[Double] = initBreakpoints()
-
-  private def initBreakpoints() : Array[Double] = {
+  val breakpoints : Array[Double] =
+  {
     val nd = new NormalDistribution(0, 1)
     val mc = 1 << maxCardSymb
     (1 until mc).map( x => nd.inverseCumulativeProbability(x.toDouble / mc) ).toArray
@@ -60,7 +59,6 @@ case class AppConfig (config: Config) {
     tsWithStats._1.map( x => (x - tsWithStats._2._1) / tsWithStats._2._2 )
 
   def tsToPAAandSAX(tsWithStats: TSWithStats) : (Array[Float], Array[Int]) = {
-    // ts must be normalized
     val ts = normalize(tsWithStats)
     val segmentSize = ts.length / wordLength
     val numExtraSegments = ts.length % wordLength

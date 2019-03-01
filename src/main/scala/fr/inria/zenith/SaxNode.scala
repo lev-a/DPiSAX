@@ -3,7 +3,7 @@ package fr.inria.zenith
 /**
   * Created by leva on 20/07/2018.
   */
-abstract class SaxNode {
+abstract class SaxNode(val nodeCard: Array[Int], val wordToCard: Array[Int]) {
 
   def insert(saxWord: Array[Int] , tsId: Long )
 
@@ -11,7 +11,7 @@ abstract class SaxNode {
 
   def split () : SaxNode
 
-  def approximateSearch(saxWord: Array[Int]) : Array[(Array[Int], Long)]
+  def approximateSearch(saxWord: Array[Int], paa: Array[Float]) : Array[(Array[Int], Long)]
 
   def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int) : Array[(Array[Int], Long)]
 

@@ -117,20 +117,22 @@ object DPiSAX  {
 
   def deserJsValue(jskey: String, jsval: JsValue, fsURI: String) : SaxNode = {
     val js = jsval.asInstanceOf[JsObject]
-    val nodeCard = js.value("_CARD_").as[String].split(",").map(_.toInt)
+//    val nodeCard = js.value("_CARD_").as[String].split(",").map(_.toInt)
+    val (wordToCard, nodeCard) = config.parseNodeId(jskey)
 
     if (js.keys.contains("_FILE_")) {
       /** create and return terminal node + read ts_list from file **/
       val filename = config.workDir + js.value("_FILE_").as[String]
       val tsFromFile = Utils.setReader(fsURI, filename)
       val tsIDs = tsFromFile.map(_.split(" ")).map(ts => (ts(0).split(",").map(_.toInt).toArray,ts(1).toLong)).toArray
-      val wordToCard = jskey.split("_").map(_.split("\\.")(0).toInt)
-      new TerminalNode(tsIDs, nodeCard, config.basicSplitBalance(nodeCard), wordToCard)
+//      val wordToCard = jskey.split("_").map(_.split("\\.")(0).toInt)
+      new TerminalNode(tsIDs, nodeCard, wordToCard)
     }
     else {
       var childHash  = new mutable.HashMap[String,SaxNode]()
       js.fields.filterNot(_._1 == "_CARD_").foreach( p => childHash += (p._1 -> deserJsValue(p._1, p._2, fsURI) ) )
-      new InternalNode(nodeCard, childHash)
+      val childCard = js.value("_CARD_").as[String].split(",").map(_.toInt)
+      new InternalNode(childCard, childHash, nodeCard, wordToCard)
     }
   }
 
@@ -146,7 +148,7 @@ object DPiSAX  {
 
     println("numPart =  " + numPart)
 
-    val partTree = new TerminalNode(Array.empty, config.zeroArray, config.basicSplitBalance(config.zeroArray), config.zeroArray )
+    val partTree = new TerminalNode(Array.empty, config.zeroArray, config.zeroArray )
     sampleToSAX.collect.foreach{case (saxWord, tsId) => partTree.insert(saxWord, tsId)}
     val partTreeRoot  = partTree.split()
 
@@ -197,7 +199,10 @@ object DPiSAX  {
 
     inputSAXpart.partitionBy(new HashPartitioner(numPart)).foreachPartition {part =>
       val first =  part.next()
-      val root = new InternalNode(partRDD.value(first._1)._1._2.map(_+1),mutable.HashMap.empty)
+      val ((partNodeId, partCard), partId) = partRDD.value(first._1)
+      val (wordToCard, nodeCard) = config.parseNodeId(partNodeId)
+
+      val root = new InternalNode(partCard.map(_+1), mutable.HashMap.empty, partCard, wordToCard)
       root.insert(first._2._1, first._2._2)
       part.foreach{case (partID, (saxWord, tsId))  => root.insert(saxWord, tsId)}
       val writer = Utils.setWriter(fscopy, config.workDir + partRDD.value(first._1)._1._1 + ".json")
@@ -214,13 +219,14 @@ object DPiSAX  {
     val results =  querySAXpart.partitionBy(new HashPartitioner(numPart)).mapPartitions { part =>
       if (part.hasNext) {
         val first = part.next()
-        val jsString = Utils.setReader(fscopy, config.workDir + partRDD.value(first._1)._1._1 + ".json").mkString
+        val partNodeId = partRDD.value(first._1)._1._1
+        val jsString = Utils.setReader(fscopy, config.workDir + partNodeId + ".json").mkString
 
         val json: JsValue = Json.parse(jsString)
-        val root = deserJsValue("", json, fscopy)
+        val root = deserJsValue(partNodeId, json, fscopy)
 
-        var result = Iterator((first._2._2, first._2._1, root.approximateSearch(first._2._1), first._2._3, first._2._4))
-        result ++= part.map { case (partID, (saxWord, queryId, paa, data)) => (queryId, saxWord, root.approximateSearch(saxWord), paa, data) }
+        var result = Iterator((first._2._2, first._2._1, root.approximateSearch(first._2._1, first._2._3), first._2._3, first._2._4))
+        result ++= part.map { case (partID, (saxWord, queryId, paa, data)) => (queryId, saxWord, root.approximateSearch(saxWord, paa), paa, data) }
         result
       }
       else Iterator()
@@ -249,7 +255,7 @@ object DPiSAX  {
     val resultsExact = partTableRDD.flatMap{ case (part_id, (node_id, node_card)) =>
       val jsString = Utils.setReader(fscopy, config.workDir + node_id + ".json").mkString
       val json: JsValue = Json.parse(jsString)
-      val root = deserJsValue("", json, fscopy)
+      val root = deserJsValue(node_id, json, fscopy)
 
       queryBC.value.map{ case(q_id, (q_paa, q_bound, q_data)) => (q_id, root.boundedSearch(q_paa, q_bound, q_data._1.length))}
 

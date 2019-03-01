@@ -46,6 +46,12 @@ case class AppConfig (config: Config) {
 
   def nodeID(wordToCard: Array[Int], nodeCard: Array[Int]) : String  = (wordToCard zip nodeCard).map{case (w,c) => s"$w.$c"}.mkString("_")
 
+  def parseNodeId(nodeId: String) : (Array[Int], Array[Int]) =
+    if (nodeId == "")
+      (zeroArray, zeroArray)
+    else
+      nodeId.split("_").map(_.split("\\.")).map(p => (p(0).toInt, p(1).toInt)).unzip
+
   def basicSplitBalance (nodeCard: Array[Int]): Array[Array[Int]] = nodeCard.map(v => Array.fill[Int](maxCardSymb - v)(0))
 
   def stats(ts: Array[Float]) : (Float, Float) = {

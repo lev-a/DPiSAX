@@ -7,14 +7,14 @@ import scala.collection.mutable
 /**
   * Created by leva on 20/07/2018.
   */
-class InternalNode (nodeCard: Array[Int], childHash: mutable.HashMap[String /* word_to_card.card = nodeID */, SaxNode]  ) extends SaxNode {
+class InternalNode (childCard: Array[Int], childHash: mutable.HashMap[String /* word_to_card.card = nodeID */, SaxNode], nodeCard: Array[Int], wordToCard: Array[Int]  ) extends SaxNode(nodeCard, wordToCard) {
 
   val config = AppConfig(ConfigFactory.load())
 
-  private def wordToCard (saxWord: Array[Int]) = (saxWord zip nodeCard).map { case (w, c) => w >> (config.maxCardSymb - c) }
+  private def wordToCard (saxWord: Array[Int]) = (saxWord zip childCard).map { case (w, c) => w >> (config.maxCardSymb - c) }
 
   override def insert(saxWord: Array[Int] , tsId: Long ): Unit  = {
-    val nodeID : String  = (wordToCard(saxWord) zip nodeCard).map{case (w,c) => s"$w.$c"}.mkString("_")
+    val nodeID : String  = (wordToCard(saxWord) zip childCard).map{case (w,c) => s"$w.$c"}.mkString("_")
 
     if (childHash.contains(nodeID)){
       var child = childHash(nodeID)
@@ -25,7 +25,7 @@ class InternalNode (nodeCard: Array[Int], childHash: mutable.HashMap[String /* w
       child.insert(saxWord, tsId)
     }
     else {
-      val newTermNode = new TerminalNode(Array.empty, nodeCard, config.basicSplitBalance(nodeCard), wordToCard(saxWord))
+      val newTermNode = new TerminalNode(Array.empty, childCard, wordToCard(saxWord))
       this.childHash += nodeID -> newTermNode
       newTermNode.insert(saxWord, tsId)
     }
@@ -35,23 +35,29 @@ class InternalNode (nodeCard: Array[Int], childHash: mutable.HashMap[String /* w
 
   override def split () : InternalNode  = this
 
-  override def toJSON (fsURI: String) : String =  "{\"_CARD_\" :" + nodeCard.mkString("\"",",","\"") + ", " + childHash.map(child => child._1.mkString("\"","","\"") + ":" + child._2.toJSON(fsURI) ).mkString(",") + "}"
+  override def toJSON (fsURI: String) : String =  "{\"_CARD_\" :" + childCard.mkString("\"",",","\"") + ", " + childHash.map(child => child._1.mkString("\"","","\"") + ":" + child._2.toJSON(fsURI) ).mkString(",") + "}"
 
-  override def approximateSearch(saxWord: Array[Int]) : Array[(Array[Int], Long)]  = {
-    val nodeID : String  = (wordToCard(saxWord) zip nodeCard).map{case (w,c) => s"$w.$c"}.mkString("_")
+  override def approximateSearch(saxWord: Array[Int], paa: Array[Float]) : Array[(Array[Int], Long)]  = {
+    val nodeID : String  = (wordToCard(saxWord) zip childCard).map{case (w,c) => s"$w.$c"}.mkString("_")
 
     if (childHash.contains(nodeID)) {
-      childHash(nodeID).approximateSearch(saxWord)
+      childHash(nodeID).approximateSearch(saxWord, paa)
      }
-    // TODO: else use lowest bound child
+    else {
+      childHash.map{ case(nodeId, node) => (config.mindist(paa, node.wordToCard, node.nodeCard, 1), node) }.toArray.minBy(_._1)._2.approximateSearch(saxWord, paa)
+    }
+/*
     else if (childHash.size == 1) {
       childHash.head._2.fullSearch
     }
     else Array.empty
-}
+*/
+  }
 
   override def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int): Array[(Array[Int], Long)] =
-    childHash.map( _._2.boundedSearch(paa, bound, tsLength) ).reduce(_++_)
+    childHash
+      .filter(c => config.mindist(paa, c._2.wordToCard, c._2.nodeCard, tsLength) <= bound)
+      .flatMap( _._2.boundedSearch(paa, bound, tsLength) ).toArray
 
   override def boundedSearch(qs: Array[(Long, (Array[Float], Float, Int))]) : Array[(Long, Long)] =
     childHash.map( _._2.boundedSearch(qs) ).reduce(_++_)

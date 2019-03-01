@@ -49,8 +49,6 @@ object Utils {
   }
 
   def getFileName(path: String) : String =
-  {
     new java.io.File(path).getName
-  }
 
 }

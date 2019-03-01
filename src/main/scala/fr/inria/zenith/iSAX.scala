@@ -50,7 +50,7 @@ object iSAX  {
         //println(SAXword.next.size)
         //SAXword.map(v => (v._2, v._1.mkString("{",",","}"))).foreach(println(_))
 
-        val root = new InternalNode(config.basicCard, mutable.HashMap.empty)
+        val root = new InternalNode(config.basicCard, mutable.HashMap.empty, config.zeroArray, config.zeroArray)
         SAXword.foreach{case (saxWord, tsId) => root.insert(saxWord, tsId)} //returns nothing
 
  //      println (root.toJSON) /** Prints tree to JSON **/
@@ -73,7 +73,8 @@ object iSAX  {
 
     /** Approximate search **/
 
-    val result = querySAXword.map(query => (query._2,query._1, root.approximateSearch(query._1))) // tuple of (Q_id, Q_word, List_of_tsIDs: Array[(Array[Int],Int)] )
+    // TODO: PAA as second argument of approximateSearch
+    val result = querySAXword.map(query => (query._2,query._1, root.approximateSearch(query._1, Array.empty))) // tuple of (Q_id, Q_word, List_of_tsIDs: Array[(Array[Int],Int)] )
 
     //  result.map { case (qid, tslist) => (qid,  tslist.map { case (tsw, tsid) => (tsw.mkString("<", ",", ">"), tsid) }.mkString) }.foreach(println(_))
   //  result.map { case (qid, qw, tslist) => (qid, qw.mkString("<", ",", ">"), tslist.map { case (tsw, tsid) => (tsw.mkString("<", ",", ">"), tsid) }.mkString) }.foreach(println(_))

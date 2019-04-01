@@ -78,7 +78,7 @@ object iSAX  {
 
     //  result.map { case (qid, tslist) => (qid,  tslist.map { case (tsw, tsid) => (tsw.mkString("<", ",", ">"), tsid) }.mkString) }.foreach(println(_))
   //  result.map { case (qid, qw, tslist) => (qid, qw.mkString("<", ",", ">"), tslist.map { case (tsw, tsid) => (tsw.mkString("<", ",", ">"), tsid) }.mkString) }.foreach(println(_))
-    result.map { case (qid, qw, tslist) => (qid,  tslist.map { case (tsw, tsid) =>  tsid }.mkString(","), tslist.length) }.foreach(println(_))
+    result.map { case (qid, qw, tslist) => (qid,  tslist.mkString(","), tslist.length) }.foreach(println(_))
 
 
 

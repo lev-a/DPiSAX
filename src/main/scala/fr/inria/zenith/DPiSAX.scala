@@ -216,7 +216,7 @@ object DPiSAX  {
     val querySAXpart = querySAX.map{case (tsId, (data, (paa, saxWord))) => (getPartID(saxWord, partRDD.value), (saxWord, tsId, paa, data))}
     val fscopy = fsURI
 
-    val results =  querySAXpart.partitionBy(new HashPartitioner(numPart)).mapPartitions { part =>
+    val candidates =  querySAXpart.partitionBy(new HashPartitioner(numPart)).mapPartitions { part =>
       if (part.hasNext) {
         val first = part.next()
         val partNodeId = partRDD.value(first._1)._1._1
@@ -232,7 +232,8 @@ object DPiSAX  {
       else Iterator()
     }
 
-    val approxRDD = results.flatMap{ case (qid, qw, tslist, paa, data) => tslist.map( t => (t._2, (qid, paa, data)) ) }
+    val approxRDD = candidates
+      .flatMap{ case (qid, qw, tslist, paa, data) => tslist.map( t => (t, (qid, paa, data)) ) }
       .join(inputRDD)
       .map{case(tsid, ((q_id, q_paa, q_data), t_data)) => (q_id, (q_paa, q_data, tsid, t_data._1, config.distance(q_data, t_data)))}
       .combineByKey(v => (v._1, v._2, Array((v._3, v._4, v._5)))
@@ -247,23 +248,24 @@ object DPiSAX  {
 
     val fscopy = fsURI
 
-    // gave up running boundedSearch on batches of queries - not efficient
-
     val queryBC = sc.broadcast( approxRDD.map{ case (q_id, q_paa, q_data, res) => (q_id, (q_paa, res.last._3, q_data)) }.collectAsMap() )
     val partTableRDD = sc.parallelize(partRDD.value.map(v => (v._2,v._1)),numPart)
 
-    val resultsExact = partTableRDD.flatMap{ case (part_id, (node_id, node_card)) =>
+    val candidates = partTableRDD.flatMap{ case (part_id, (node_id, node_card)) =>
       val jsString = Utils.setReader(fscopy, config.workDir + node_id + ".json").mkString
       val json: JsValue = Json.parse(jsString)
       val root = deserJsValue(node_id, json, fscopy)
+      var tsMap = new mutable.HashMap[Long, mutable.ListBuffer[Long]]()
 
-      queryBC.value.map{ case(q_id, (q_paa, q_bound, q_data)) => (q_id, root.boundedSearch(q_paa, q_bound, q_data._1.length))}
+      queryBC.value.foreach { case (q_id, (q_paa, q_bound, q_data)) =>
+          val it = root.boundedSearch(q_paa, q_bound, q_data._1.length)
+          it.foreach(t => tsMap.getOrElseUpdate(t, new mutable.ListBuffer[Long]()) += q_id)
+      }
 
+      tsMap.iterator.map(t => (t._1, t._2.toArray))
     }
 
-    val exactRDD = resultsExact
-      .flatMap{ case(qid, tslist) => tslist.map( t => (t._2, qid) )}
-      .combineByKey(v => Array(v), (xs: Array[Long], v) => xs :+ v, (xs: Array[Long], ys: Array[Long]) => xs ++ ys)
+    val exactRDD = candidates
       .join(inputRDD)
       .mapPartitions{ part =>
         var queryMap = new mutable.HashMap[Long, Array[(Long, Array[Float], Float)]]()

@@ -62,7 +62,7 @@ case class AppConfig (config: Config) {
   }
 
   def normalize(tsWithStats: TSWithStats) : Array[Float] =
-    tsWithStats._1.map( x => (x - tsWithStats._2._1) / tsWithStats._2._2 )
+    tsWithStats._1.map( x => if (tsWithStats._2._2 > 0) (x - tsWithStats._2._1) / tsWithStats._2._2 else 0.toFloat )
 
   def tsToPAAandSAX(tsWithStats: TSWithStats) : (Array[Float], Array[Int]) = {
     val ts = normalize(tsWithStats)
@@ -92,7 +92,7 @@ case class AppConfig (config: Config) {
   }
 
   def distance(xs: TSWithStats, ys: TSWithStats) : Float =
-    sqrt((xs._1 zip ys._1).map { case (x, y) => pow((y - ys._2._1)/ys._2._2 - (x - xs._2._1)/xs._2._2, 2)}.sum).toFloat
+    sqrt((normalize(xs) zip normalize(ys)).map { case (x, y) => pow(y - x, 2)}.sum).toFloat
 
 
 

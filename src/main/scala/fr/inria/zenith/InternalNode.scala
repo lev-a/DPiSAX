@@ -37,32 +37,34 @@ class InternalNode (childCard: Array[Int], childHash: mutable.HashMap[String /* 
 
   override def toJSON (fsURI: String) : String =  "{\"_CARD_\" :" + childCard.mkString("\"",",","\"") + ", " + childHash.map(child => child._1.mkString("\"","","\"") + ":" + child._2.toJSON(fsURI) ).mkString(",") + "}"
 
-  override def approximateSearch(saxWord: Array[Int], paa: Array[Float]) : Array[(Array[Int], Long)]  = {
+  override def approximateSearch(saxWord: Array[Int], paa: Array[Float]) : Array[Long]  = {
     val nodeID : String  = (wordToCard(saxWord) zip childCard).map{case (w,c) => s"$w.$c"}.mkString("_")
 
+    var result : Array[Long] = Array.empty
+
     if (childHash.contains(nodeID)) {
-      childHash(nodeID).approximateSearch(saxWord, paa)
-     }
-    else {
-      childHash.map{ case(nodeId, node) => (config.mindist(paa, node.wordToCard, node.nodeCard, 1), node) }.toArray.minBy(_._1)._2.approximateSearch(saxWord, paa)
+      result ++= childHash(nodeID).approximateSearch(saxWord, paa)
     }
-/*
-    else if (childHash.size == 1) {
-      childHash.head._2.fullSearch
+
+    if (result.length < config.topk) {
+      childHash.filter(_._1 != nodeID)
+        .map{ case(nodeId, node) => (config.mindist(paa, node.wordToCard, node.nodeCard, 1), node) }
+        .toArray.sortBy(_._1).map(_._2)
+        .takeWhile { node =>
+          result ++= node.approximateSearch(saxWord, paa)
+          result.length < config.topk
+        }
     }
-    else Array.empty
-*/
+
+    result
   }
 
-  override def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int): Array[(Array[Int], Long)] =
+  override def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int): Array[Long] =
     childHash
       .filter(c => config.mindist(paa, c._2.wordToCard, c._2.nodeCard, tsLength) <= bound)
       .flatMap( _._2.boundedSearch(paa, bound, tsLength) ).toArray
 
-  override def boundedSearch(qs: Array[(Long, (Array[Float], Float, Int))]) : Array[(Long, Long)] =
-    childHash.map( _._2.boundedSearch(qs) ).reduce(_++_)
-
-  def fullSearch : Array[(Array[Int],Long)] = childHash.flatMap(_._2.fullSearch).toArray
+  def fullSearch : Array[Long] = childHash.flatMap(_._2.fullSearch).toArray
 
   def partTreeSplit (nodeToSplitID: String) : Unit = {
 

@@ -64,17 +64,12 @@ class TerminalNode (var tsIDs: Array[(Array[Int],Long)], nodeCard: Array[Int], w
     "{\"_CARD_\" :" + nodeCard.mkString("\"", ",", "\"") + ", " + "\"_FILE_\" :" + "\"" + nodeID + "\"" + ", \"_NUM_\":" + tsIDs.length + "}"
   }
 
-  override def approximateSearch(saxWord: Array[Int], paa: Array[Float]) : Array[(Array[Int], Long)] = tsIDs
+  override def approximateSearch(saxWord: Array[Int], paa: Array[Float]) : Array[Long] = tsIDs.map(_._2)
 
-  override def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int): Array[(Array[Int], Long)] =
-      tsIDs.filter( t => config.mindist(paa, t._1, Array.fill[Int](config.wordLength)(config.maxCardSymb), tsLength) <= bound )
+  override def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int): Array[Long] =
+      tsIDs.filter( t => config.mindist(paa, t._1, Array.fill[Int](config.wordLength)(config.maxCardSymb), tsLength) <= bound ).map(_._2)
 
-  override def boundedSearch(qs: Array[(Long, (Array[Float], Float, Int))]) : Array[(Long, Long)] = {
-    qs.filter{ case(q_id, (q_paa, q_bound, q_length)) => config.mindist(q_paa, wordToCard, nodeCard, q_length) <= q_bound }
-      .flatMap{ case(q_id, (q_paa, q_bound, q_length)) => tsIDs.filter(t => config.mindist(q_paa, t._1, Array.fill[Int](config.wordLength)(config.maxCardSymb), q_length) <= q_bound).map(t => (t._2, q_id))}
-    }
-
-  def fullSearch :  Array[(Array[Int], Long)] = tsIDs
+  def fullSearch : Array[Long] = tsIDs.map(_._2)
 
   def partTreeSplit (node: String) : Unit  =  if (node == nodeID) this.split()
 

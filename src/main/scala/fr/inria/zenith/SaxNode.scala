@@ -11,13 +11,11 @@ abstract class SaxNode(val nodeCard: Array[Int], val wordToCard: Array[Int]) {
 
   def split () : SaxNode
 
-  def approximateSearch(saxWord: Array[Int], paa: Array[Float]) : Array[(Array[Int], Long)]
+  def approximateSearch(saxWord: Array[Int], paa: Array[Float]) : Array[Long]
 
-  def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int) : Array[(Array[Int], Long)]
+  def boundedSearch(paa: Array[Float], bound: Float, tsLength: Int) : Array[Long]
 
-  def boundedSearch(qs: Array[(Long, (Array[Float], Float, Int))]) : Array[(Long, Long)]
-
-  def fullSearch : Array[(Array[Int],Long)]
+  def fullSearch : Array[Long]
 
   def toJSON (fsURI: String) : String
 

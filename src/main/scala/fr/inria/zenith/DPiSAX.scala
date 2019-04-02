@@ -52,15 +52,16 @@ object DPiSAX  {
  //     .foreach(println(_))
 
    //val res =   rdd.map{ case (q_id, q_data, res) => "(" + q_id + "," + q_data.mkString("[",",","]") + ")," + res.map(c => "(" + c._1 +  "," + c._2.mkString("[",",","]") + ")," + c._3 ).mkString("(",",",")")}
-    val res =   rdd.map{ case (q_id, q_data, res) =>((q_id, q_data.mkString("[",",","]")),res.map(c => "(" + c._1 +  "," + c._2.mkString("[",",","]") + ")," + c._3 ).mkString("(",",",")"))}
+    val res =   rdd.map{ case (q_id, q_data, res) =>((q_id, q_data.mkString("[",",","]")),res.map(c => "((" + c._1 +  "," + c._2.mkString("[",",","]") + ")," + c._3 + ")").mkString("[",",","]"))}
     .collect
 
     val t2 = System.currentTimeMillis()
-    val writer = Utils.setWriter("file:///", "/tmp/" + config.workDir + Utils.getFileName(config.queryFilePath) + "_" + label + "_" + (t2 - t1) )
+    val resPath =  "/tmp/"   + config.workDir + label + "_" + Utils.getFileName(config.queryFilePath) + "_"  + (t2 - t1)
+    val writer = Utils.setWriter("file:///", resPath)
     writer.write(res.map(_.toString).reduce(_ + '\n' + _))
     writer.write("\n")
     writer.close
-
+    println("Result saved to " + resPath)
     println(label + ": " + (t2 - t1)  + " ms (" +  Utils.getMinSec(t2-t1) + ")")
 
   }

@@ -255,6 +255,7 @@ object DPiSAX  {
       val jsString = Utils.setReader(fscopy, config.workDir + node_id + ".json").mkString
       val json: JsValue = Json.parse(jsString)
       val root = deserJsValue(node_id, json, fscopy)
+/*
       var tsMap = new mutable.HashMap[Long, mutable.ListBuffer[Long]]()
 
       queryBC.value.foreach { case (q_id, (q_paa, q_bound, q_data)) =>
@@ -263,9 +264,17 @@ object DPiSAX  {
       }
 
       tsMap.iterator.map(t => (t._1, t._2.toArray))
+*/
+      queryBC.value.map{ case(q_id, (q_paa, q_bound, q_data)) => (q_id, root.boundedSearch(q_paa, q_bound, q_data._1.length))}
+
     }
 
+    candidates.cache()
+    println("Average candidates for exact search: " + candidates.map(_._2.length).sum() / queryBC.value.size)
+
     val exactRDD = candidates
+      .flatMap{ case(qid, tslist) => tslist.map( t => (t, qid) )}
+      .combineByKey(v => Array(v), (xs: Array[Long], v) => xs :+ v, (xs: Array[Long], ys: Array[Long]) => xs ++ ys)
       .join(inputRDD)
       .mapPartitions{ part =>
         var queryMap = new mutable.HashMap[Long, Array[(Long, Array[Float], Float)]]()

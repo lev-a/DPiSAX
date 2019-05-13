@@ -40,11 +40,10 @@ class InternalNode (childCard: Array[Int], childHash: mutable.HashMap[String /* 
   override def approximateSearch(saxWord: Array[Int], paa: Array[Float]) : Array[Long]  = {
     val nodeID : String  = (wordToCard(saxWord) zip childCard).map{case (w,c) => s"$w.$c"}.mkString("_")
 
-    var result : Array[Long] = Array.empty
-
-    if (childHash.contains(nodeID)) {
-      result ++= childHash(nodeID).approximateSearch(saxWord, paa)
-    }
+    var result : Array[Long] = if (childHash.contains(nodeID))
+      childHash(nodeID).approximateSearch(saxWord, paa)
+    else
+      Array.empty
 
     if (result.length < config.topk) {
       childHash.filter(_._1 != nodeID)

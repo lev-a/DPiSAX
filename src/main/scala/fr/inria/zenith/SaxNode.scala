@@ -1,8 +1,6 @@
 package fr.inria.zenith
 
-/**
-  * Created by leva on 20/07/2018.
-  */
+
 abstract class SaxNode(val nodeCard: Array[Int], val wordToCard: Array[Int]) {
 
   def insert(saxWord: Array[Int] , tsId: Long )

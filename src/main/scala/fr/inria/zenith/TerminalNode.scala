@@ -4,9 +4,7 @@ import com.typesafe.config.ConfigFactory
 
 import scala.collection.mutable
 
-/**
-  * Created by leva on 20/07/2018.
-  */
+
 class TerminalNode (var tsIDs: Array[(Array[Int],Long)], nodeCard: Array[Int], wordToCard: Array[Int]) extends SaxNode(nodeCard, wordToCard) {
 
   val config = AppConfig(ConfigFactory.load())
@@ -14,15 +12,15 @@ class TerminalNode (var tsIDs: Array[(Array[Int],Long)], nodeCard: Array[Int], w
   val nodeID : String = config.nodeID(wordToCard, nodeCard)
   var maxCardStep : Int = config.maxCardSymb
 
+  /**  Array[(elem_to_split_position, cardinality_to_split_on)] **/
   def splitCandList : List[(Int,Int,Int)] = splitBalance.map(_.map(math.abs(_)).zipWithIndex.dropWhile(_._1 >= tsIDs.length)).zipWithIndex.filter(_._1.nonEmpty).map(v => (v._1.head, v._2)).filter(v => nodeCard(v._2) < config.maxCardSymb).toList.sortBy(r => r._1._2 * tsIDs.length + r._1._1).map(v => (v._2,v._1._2,v._1._1)).filter(_._2 < maxCardStep)
-  // Array[(elem_to_split_position, cardinality_to_split_on)]
+
 
 
 
   override def insert(saxWord: Array[Int] , tsId: Long): Unit  = {
     val wordToCardNext = (saxWord zip nodeCard).map { case (w, c) => for (i <- c until config.maxCardSymb) yield { (w >> (config.maxCardSymb - i - 1) & 0XFF).toByte}  }
     splitBalance = splitBalance.zip(wordToCardNext).map(v => v._1.zip(v._2).map(v => v._1 + ((v._2 % 2) * 2 - 1)))
-    //TODO if the cardinality is already max
     tsIDs = tsIDs :+ (saxWord, tsId)
   }
 
@@ -46,21 +44,11 @@ class TerminalNode (var tsIDs: Array[(Array[Int],Long)], nodeCard: Array[Int], w
     childHash ++= newTermNodes.map(node => node.nodeID -> node)
 
     var newInternalNode = new InternalNode(newNodeCard, childHash, nodeCard, wordToCard)
-/*
-    for (i <- 1 until cardStep) {
-         val newIntNodeCard = newNodeCard.updated(elemToSplit._1, newNodeCard(elemToSplit._1) - i)
-         val newIntWordToCard = newWordToCard(0).updated(elemToSplit._1,newWordToCard(0)(elemToSplit._1) >> i)
-         val newNodeID  = config.nodeID(newIntWordToCard, newIntNodeCard)
-         childHash =  new mutable.HashMap[String, SaxNode]()
-         childHash += newNodeID -> newInternalNode
-         newInternalNode = new InternalNode(newIntNodeCard, childHash)
-    }
-*/
     newInternalNode
   }
 
   override def toJSON (fsURI: String) : String = {
-    tsToFile(fsURI) //TODO where should be this call ?
+    tsToFile(fsURI)
     "{\"_CARD_\" :" + nodeCard.mkString("\"", ",", "\"") + ", " + "\"_FILE_\" :" + "\"" + nodeID + "\"" + ", \"_NUM_\":" + tsIDs.length + "}"
   }
 
@@ -73,7 +61,6 @@ class TerminalNode (var tsIDs: Array[(Array[Int],Long)], nodeCard: Array[Int], w
 
   def partTreeSplit (node: String) : Unit  =  if (node == nodeID) this.split()
 
-//  override def partTable  : Array[ (String,Array[Int],Int)] = Array((nodeID, nodeCard,  tsIDs.length ))
   override def partTable  : Array[ (String,Array[Int],Int)] = {
     maxCardStep = 1
     Array((nodeID, nodeCard,  (tsIDs.length - splitCandList.map(_._3).headOption.getOrElse(tsIDs.length))/2))
@@ -84,7 +71,7 @@ class TerminalNode (var tsIDs: Array[(Array[Int],Long)], nodeCard: Array[Int], w
    val writer = Utils.setWriter(fsURI, config.workDir + nodeID)
      tsIDs.foreach(t => writer.write (t._1.mkString(",") + " " + t._2 + "\n") )
      writer.close
-  } //TODO close fs ????
+  }
 
 
 }

@@ -6,9 +6,6 @@ import java.util.concurrent.TimeUnit
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 
-/**
-  * Created by leva on 15/02/2019.
-  */
 object Utils {
 
   def getMinSec (millis : Long) =
@@ -32,7 +29,6 @@ object Utils {
     val fs = getFS(fsURI)
     val input = new Path(path)
     fs.exists(input) match {
-      //case true => sc.textFile(path).collect
       case true => {
         val reader = new BufferedReader(new InputStreamReader(fs.open(input)))
         val lines = scala.collection.mutable.ArrayBuffer[String]()
@@ -41,10 +37,10 @@ object Utils {
           lines += line
           line = reader.readLine()
         }
-        reader.close; //fs.close
+        reader.close;
         lines.toArray
       }
-      case false => /*fs.close;*/  Array[String]()
+      case false =>  Array[String]()
     }
   }
 

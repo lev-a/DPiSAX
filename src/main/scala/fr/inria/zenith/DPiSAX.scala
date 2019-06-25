@@ -8,7 +8,7 @@ import org.apache.spark.{HashPartitioner, SparkConf, SparkContext}
 import play.api.libs.json._
 
 import scala.collection.mutable
-
+import scala.math._
 
 
 object DPiSAX  {
@@ -45,13 +45,6 @@ object DPiSAX  {
 
     val t1 = System.currentTimeMillis()
 
- //   println(label + ":")
-
- //   rdd.map{ case (q_id, q_data, res) => "(" + q_id + " " + res.map(r => "(" + r._1 + ", " + r._3 + ")").mkString("<", ",", ">") }
- //     .collect()
- //     .foreach(println(_))
-
-   //val res =   rdd.map{ case (q_id, q_data, res) => "(" + q_id + "," + q_data.mkString("[",",","]") + ")," + res.map(c => "(" + c._1 +  "," + c._2.mkString("[",",","]") + ")," + c._3 ).mkString("(",",",")")}
     val res =   rdd.map{ case (q_id, q_data, res) =>((q_id, q_data.mkString("[",",","]")),res.map(c => "((" + c._1 +  "," + c._2.mkString("[",",","]") + ")," + c._3 + ")").mkString("[",",","]"))}
     .collect
 
@@ -118,7 +111,6 @@ object DPiSAX  {
 
   def deserJsValue(jskey: String, jsval: JsValue, fsURI: String) : SaxNode = {
     val js = jsval.asInstanceOf[JsObject]
-//    val nodeCard = js.value("_CARD_").as[String].split(",").map(_.toInt)
     val (wordToCard, nodeCard) = config.parseNodeId(jskey)
 
     if (js.keys.contains("_FILE_")) {
@@ -126,7 +118,6 @@ object DPiSAX  {
       val filename = config.workDir + js.value("_FILE_").as[String]
       val tsFromFile = Utils.setReader(fsURI, filename)
       val tsIDs = tsFromFile.map(_.split(" ")).map(ts => (ts(0).split(",").map(_.toInt).toArray,ts(1).toLong)).toArray
-//      val wordToCard = jskey.split("_").map(_.split("\\.")(0).toInt)
       new TerminalNode(tsIDs, nodeCard, wordToCard)
     }
     else {
@@ -141,8 +132,6 @@ object DPiSAX  {
 
     val fscopy = fsURI
 
-    //val sample = config.sampleSize
-   // val sample = numPart*1000
     /** Sampling **/
     val tsSample = inputRDD.sample(false,config.sampleSize)
     val sampleToSAX = tsToSAX(tsSample)
@@ -153,7 +142,7 @@ object DPiSAX  {
     sampleToSAX.collect.foreach{case (saxWord, tsId) => partTree.insert(saxWord, tsId)}
     val partTreeRoot  = partTree.split()
 
-    0 until numPart-2 foreach { _ =>  partTreeSplit(partTreeRoot) } //TODO => if all are 0  -> break
+    0 until numPart-2 foreach { _ =>  partTreeSplit(partTreeRoot) }
 
     /** Partitioning TAble **/
     val partTable = partTreeRoot.partTable
@@ -203,7 +192,7 @@ object DPiSAX  {
       val ((partNodeId, partCard), partId) = partRDD.value(first._1)
       val (wordToCard, nodeCard) = config.parseNodeId(partNodeId)
 
-      val root = new InternalNode(partCard.map(_+1), mutable.HashMap.empty, partCard, wordToCard)
+      val root = new InternalNode(partCard.map(c => min(c + config.basicCardSymb, config.maxCardSymb)), mutable.HashMap.empty, partCard, wordToCard)
       root.insert(first._2._1, first._2._2)
       part.foreach{case (partID, (saxWord, tsId))  => root.insert(saxWord, tsId)}
       val writer = Utils.setWriter(fscopy, config.workDir + partRDD.value(first._1)._1._1 + ".json")
@@ -256,16 +245,6 @@ object DPiSAX  {
       val jsString = Utils.setReader(fscopy, config.workDir + node_id + ".json").mkString
       val json: JsValue = Json.parse(jsString)
       val root = deserJsValue(node_id, json, fscopy)
-/*
-      var tsMap = new mutable.HashMap[Long, mutable.ListBuffer[Long]]()
-
-      queryBC.value.foreach { case (q_id, (q_paa, q_bound, q_data)) =>
-          val it = root.boundedSearch(q_paa, q_bound, q_data._1.length)
-          it.foreach(t => tsMap.getOrElseUpdate(t, new mutable.ListBuffer[Long]()) += q_id)
-      }
-
-      tsMap.iterator.map(t => (t._1, t._2.toArray))
-*/
       queryBC.value.map{ case(q_id, (q_paa, q_bound, q_data)) => (q_id, root.boundedSearch(q_paa, q_bound, q_data._1.length))}
 
     }
@@ -341,7 +320,6 @@ object DPiSAX  {
       case false => createPartTable(inputRDD)
     }
 
-//   val partTable = createPartTable(inputRDD)
     val partRDD : PartTableBC = sc.broadcast(partTable.map(col => (col._1, col._2)).zipWithIndex)
 
 
@@ -366,7 +344,6 @@ object DPiSAX  {
     /**  Exact Search               **/
     /*********************************/
 
-//    val exactRDD = exactQuery(partRDD, inputRDD, approxRDD, sc.parallelize(0 until numPart))
     val exactRDD = exactQuery(partRDD, inputRDD, approxRDD, sc)
     outputRDD("Exact", exactRDD)
 

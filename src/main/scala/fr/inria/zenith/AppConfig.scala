@@ -5,9 +5,7 @@ import org.apache.commons.math3.distribution.NormalDistribution
 
 import scala.math._
 
-/**
-  * Created by leva on 23/07/2018.
-  */
+
 case class AppConfig (config: Config) {
 
 
@@ -16,6 +14,7 @@ case class AppConfig (config: Config) {
 
   val maxCardSymb : Integer = config.getInt("maxCardSymb")
   val wordLength : Integer = config.getInt("wordLength")
+  val basicCardSymb : Integer = config.getInt("basicCardSymb")
   val threshold : Integer = config.getInt("threshold")
   val topk : Integer = config.getInt("topk")
 
@@ -23,8 +22,8 @@ case class AppConfig (config: Config) {
   val queryFilePath : String = config.getString("queryFilePath")
   val firstCol : Integer = config.getInt("firstCol")
 
-  val saveDir : String =  config.getString("saveDir") //TODO => saveDir ???
-  val workDir : String = saveDir + Utils.getFileName(tsFilePath) + "_" + wordLength +  "_" + maxCardSymb + "/" //TODO => if tsFilePath is a full path /dir/dir/file
+  val saveDir : String =  config.getString("saveDir")
+  val workDir : String = saveDir + Utils.getFileName(tsFilePath) + "_" + wordLength +  "_" + maxCardSymb + "/"
 
 
   val numPart : Integer = config.getInt("numPart")

@@ -4,9 +4,7 @@ import com.typesafe.config.ConfigFactory
 
 import scala.collection.mutable
 
-/**
-  * Created by leva on 20/07/2018.
-  */
+
 class InternalNode (childCard: Array[Int], childHash: mutable.HashMap[String /* word_to_card.card = nodeID */, SaxNode], nodeCard: Array[Int], wordToCard: Array[Int]  ) extends SaxNode(nodeCard, wordToCard) {
 
   val config = AppConfig(ConfigFactory.load())

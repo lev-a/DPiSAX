@@ -56,7 +56,7 @@ Example:
 </pre>
 
 
-###Configuration from a file
+### Configuration from a file
 
 The default configuration is loaded from application.conf file. 
 To use your own configuration run the application with: 

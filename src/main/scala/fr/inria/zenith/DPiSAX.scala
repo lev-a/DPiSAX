@@ -83,9 +83,13 @@ object DPiSAX  {
 
   private def partTreeSplit (tree: SaxNode) : Unit = {
     val partTable = tree.partTable.toList
-    val partNode = partTable.maxBy(_._3)._1
-    if (partNode != null)
-      tree.partTreeSplit(partNode)
+    val candToSplit = partTable.maxBy(_._3)
+
+    if (candToSplit._3 > 0) {
+      tree.partTreeSplit(candToSplit._1)
+    }
+
+
   }
 
   private def linearSearch(inputRDD: DataStatsRDD, queryRDD: DataStatsRDD, sc: SparkContext) : OutputRDD = {
@@ -142,10 +146,11 @@ object DPiSAX  {
     sampleToSAX.collect.foreach{case (saxWord, tsId) => partTree.insert(saxWord, tsId)}
     val partTreeRoot  = partTree.split()
 
-    0 until numPart-2 foreach { _ =>  partTreeSplit(partTreeRoot) }
+    (0 until numPart-2).iterator.takeWhile(_ => partTreeRoot.partTable.toList.maxBy(_._3)._3 > 0).foreach { _ =>  partTreeSplit(partTreeRoot) }
 
     /** Partitioning TAble **/
     val partTable = partTreeRoot.partTable
+
     /** saves partTable to file 'workDir/partTable **/
     var writer = Utils.setWriter(fscopy, config.workDir + "partTable")
       partTable.foreach{case (nodeID, nodeCard, tsNum) => writer.write (nodeID + " " + nodeCard.mkString(",") + " " + tsNum + "\n") }
@@ -155,7 +160,7 @@ object DPiSAX  {
     writer = Utils.setWriter(fscopy, config.workDir + "partTree.json")
       writer.write(partTreeRoot.toJSON(fscopy)); writer.close
     println("partTable:" ) ;partTable.map(v => (v._1, v._2.mkString("{",",","}"), v._3)).foreach(println)
-
+    println("partTableSize = " + partTable.length)
     partTable
   }
 
@@ -319,6 +324,7 @@ object DPiSAX  {
       case true =>  buildIndexCond=false; readPartTable()
       case false => createPartTable(inputRDD)
     }
+  numPart =  partTable.length
 
     val partRDD : PartTableBC = sc.broadcast(partTable.map(col => (col._1, col._2)).zipWithIndex)
 
